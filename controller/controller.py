@@ -19,15 +19,20 @@ class Controller:
     """Контроллер приложения — управляет жизненным циклом измерения.
 
     Запускает измерение через сигнал START_MEASURING и останавливает
-    через сигнал STOP_MEASURING в одной из двух ситуаций:
+    в одной из двух ситуаций:
       - штатное завершение: check_condition() вернул False
                             (например, собрано достаточно пакетов данных);
+                            эмиттит STOP_MEASURING — порт штатно переводит МК
+                            в холостой режим.
       - аварийное завершение: один из сигналов HANDSHAKE_FAILED / DEVICE_LOST
-                              / COMMAND_ACK_TIMEOUT выставил флаг _force_stop.
+                              / COMMAND_ACK_TIMEOUT / COMMAND_REJECTED
+                              выставил флаг _force_stop;
+                              эмиттит INTERRUPT_MEASURING — порт закрывается
+                              без попыток послать МК завершающие команды.
 
-    В обоих случаях STOP_MEASURING эмиттится ровно один раз — после цикла
-    проверки в методе stop(). Обработчики аварийных сигналов не эмиттят
-    STOP_MEASURING самостоятельно, чтобы исключить рекурсию через
+    В обоих случаях соответствующий сигнал эмиттится ровно один раз — после
+    цикла проверки в методе stop(). Обработчики аварийных сигналов не эмиттят
+    STOP/INTERRUPT_MEASURING самостоятельно, чтобы исключить рекурсию через
     on_stop_measuring -> _send_command_with_ack -> COMMAND_ACK_TIMEOUT ->
     on_command_ack_timeout -> on_stop_measuring.
 
@@ -36,7 +41,8 @@ class Controller:
                                      Возвращает True пока измерение должно продолжаться.
         _force_stop (bool):          Флаг аварийного завершения. Выставляется
                                      обработчиками аварийных сигналов и прерывает
-                                     цикл ожидания в stop().
+                                     цикл ожидания в stop(); в этом случае вместо
+                                     STOP_MEASURING эмиттится INTERRUPT_MEASURING.
 
     Пример использования:
         N = 5000
@@ -56,6 +62,7 @@ class Controller:
         bus.handshake_failed.subscribe(self)
         bus.device_lost.subscribe(self)
         bus.command_ack_timeout.subscribe(self)
+        bus.command_rejected.subscribe(self)
 
     async def start(self) -> None:
         """Запускает измерение через сигнал START_MEASURING.
@@ -67,14 +74,24 @@ class Controller:
         await bus.start_measuring.emit()
 
     async def stop(self) -> None:
-        """Ожидает условия остановки и эмиттит STOP_MEASURING.
+        """Ожидает условия остановки и эмиттит STOP_MEASURING или INTERRUPT_MEASURING.
 
         Цикл прерывается при одном из двух условий:
-          - check_condition() вернул False (штатное завершение);
-          - _force_stop выставлен аварийным обработчиком.
+          - check_condition() вернул False — штатное завершение, эмиттится
+            STOP_MEASURING (порт штатно переводит МК в холостой режим);
+          - _force_stop выставлен аварийным обработчиком — эмиттится
+            INTERRUPT_MEASURING (порт закрывается без команд МК).
 
         Управление передаётся event loop между проверками через
         asyncio.sleep(0), чтобы не блокировать другие задачи.
+
+        TODO: пограничный случай — _force_stop может быть выставлен внутри
+            on_stop_measuring (из-за COMMAND_ACK_TIMEOUT при попытке перевести
+            МК в холостой). В этой ветке мы уже вышли из цикла и
+            INTERRUPT_MEASURING не эмиттим. Сейчас ничего не ломается —
+            ресурсы корректно закрываются через async with в main(),
+            но сигнал об аварии теряется. Если упрёмся в реальной отладке,
+            добавим повторную проверку _force_stop после STOP_MEASURING.
 
         Raises:
             asyncio.CancelledError: При внешней отмене задачи.
@@ -86,10 +103,10 @@ class Controller:
 
             if self._force_stop:
                 _logger.info('Аварийная остановка измерения')
+                await bus.interrupt_measuring.emit()
             else:
                 _logger.info('Условие остановки выполнено — остановка измерения')
-
-            await bus.stop_measuring.emit()
+                await bus.stop_measuring.emit()
 
         except asyncio.CancelledError:
             _logger.debug('Цикл проверки условия остановлен')
@@ -121,4 +138,15 @@ class Controller:
         STOP_MEASURING будет эмиттирован из stop() после выхода из цикла.
         """
         _logger.critical('МК не подтвердил команду — аварийная остановка')
+        self._force_stop = True
+
+    async def on_command_rejected(self) -> None:
+        """Обработчик сигнала COMMAND_REJECTED — выставляет _force_stop.
+
+        Вызывается когда МК ответил, но не распознал отправленную команду
+        (прислал 'UNKNOWN_COMMAND'). Это программная ошибка контракта
+        ПК↔МК — продолжение работы небезопасно. INTERRUPT_MEASURING будет
+        эмиттирован из stop() после выхода из цикла.
+        """
+        _logger.critical('🛑 МК отверг команду — программная ошибка ПК↔МК, аварийная остановка')
         self._force_stop = True

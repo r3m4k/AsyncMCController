@@ -63,8 +63,8 @@ class ImuDecoder(BaseDecoder[ImuData]):
     PACKAGE_READY):
         - подписка: HEARTBEAT_SENT, COMMAND_SENT (сохранить состояние);
         - подписка: COMMAND_ACK_TIMEOUT (откатить состояние при таймауте);
-        - эмиссия:  HANDSHAKE_DONE, HEARTBEAT_ACK, COMMAND_ACK
-                    (через _command_queue, из _bytes_to_message).
+        - эмиссия:  HANDSHAKE_DONE, HEARTBEAT_ACK, COMMAND_ACK,
+                    COMMAND_REJECTED (через _command_queue, из _bytes_to_message).
 
     Attributes:
         received_data (list[ImuData]): Плоский список принятых пакетов
@@ -77,10 +77,11 @@ class ImuDecoder(BaseDecoder[ImuData]):
             await controller.stop()
     """
 
-    _header:        list[bytes] = [b'\xc8', b'\x8c']          # Заголовок посылки (2 байта)
-    _handshake_ack: str         = 'IMU_STM32_ACK'             # Ожидаемое сообщение рукопожатия
-    _heartbeat_ack: str         = 'IMU_STM32_ALIVE'           # Ожидаемое сообщение heartbeat
-    _command_ack:   str         = 'CONFIRM_RECEIVED_COMMAND'  # Ожидаемое подтверждение команды
+    _header:                list[bytes] = [b'\xc8', b'\x8c']          # Заголовок посылки (2 байта)
+    _handshake_ack:         str         = 'IMU_STM32_ACK'             # Ожидаемое сообщение рукопожатия
+    _heartbeat_ack:         str         = 'IMU_STM32_ALIVE'           # Ожидаемое сообщение heartbeat
+    _command_ack:           str         = 'CONFIRM_RECEIVED_COMMAND'  # Ожидаемое подтверждение команды
+    _command_rejected_msg:  str         = 'UNKNOWN_COMMAND'           # Отказ МК: команда не распознана
 
     def __init__(self):
         super().__init__()
@@ -265,18 +266,43 @@ class ImuDecoder(BaseDecoder[ImuData]):
         _logger.debug(f'Пакет #{self._num_correct_packages} декодирован: package_num={data.package_num}')
 
     async def _bytes_to_command(self, byte_list: list[bytes]) -> None:
-        """Заглушка для будущей обработки командных пакетов от МК.
+        """Заглушка для будущей обработки командных пакетов от МК (формат 0xAB).
+
+        В текущем проекте МК не отправляет ПК команд — соответствующих
+        строк в протоколе ещё нет. Метод оставлен как точка расширения:
+        формат пакета распознаётся (CRC проверяется штатно в BaseDecoder),
+        но содержимое не интерпретируется.
+
+        TODO: реализовать обработку команд от МК.
+            Когда появятся конкретные команды — нужно:
+              1. Согласовать layout body пакета (где имя команды, где параметры).
+              2. В ImuDecoder завести реестр известных команд:
+                     _command_registry: dict[str, <signal_descriptor>]
+                 где значение — дескриптор шины с методом `async emit(...)`.
+              3. Здесь: распарсить ASCII-имя из byte_list, найти в реестре,
+                 эмиттить через _command_queue. Неизвестное имя — warning
+                 без эмиссии (по аналогии с веткой else в _bytes_to_message).
+              4. Конкретные сигналы команд добавить в наследниках Signals/AppBus
+                 для каждого проекта — без раздувания базовых перечислений.
 
         Args:
             byte_list (list[bytes]): Список байтов всей посылки.
         """
-        _logger.debug(f'Командный пакет получен (обработчик не реализован): {byte_list}')
+        _logger.debug(f'Командный пакет от МК получен (обработчик не реализован): {byte_list}')
 
     async def _bytes_to_message(self, byte_list: list[bytes]) -> None:
         """Декодирует текстовое сообщение от МК.
 
-        Различает ACK рукопожатия и ACK heartbeat по содержимому строки.
-        При heartbeat ACK восстанавливает сохранённое состояние автомата.
+        Различает четыре известных сообщения:
+          - 'IMU_STM32_ACK'           — ACK рукопожатия → HANDSHAKE_DONE;
+          - 'IMU_STM32_ALIVE'         — ACK heartbeat → HEARTBEAT_ACK;
+          - 'CONFIRM_RECEIVED_COMMAND' — подтверждение команды → COMMAND_ACK;
+          - 'UNKNOWN_COMMAND'         — МК не понял команду → COMMAND_REJECTED.
+
+        Во всех случаях кроме рукопожатия восстанавливает сохранённое состояние
+        автомата (heartbeat / command_ack / command_rejected — все приходят
+        в момент, когда декодер находится в режиме «ждём ответ на команду»
+        с сохранённым в _saved_state контекстом разбора прерванной посылки).
 
         Args:
             byte_list (list[bytes]): Список байтов всей посылки.
@@ -303,6 +329,11 @@ class ImuDecoder(BaseDecoder[ImuData]):
             self._restore_state()
             await self._command_queue.put(bus.command_ack.emit())
             _logger.debug(f'Подтверждение команды получено: "{message}"')
+
+        elif message == self._command_rejected_msg:
+            self._restore_state()
+            await self._command_queue.put(bus.command_rejected.emit())
+            _logger.warning(f'МК отверг команду: "{message}"')
 
         else:
             _logger.warning(f'Неизвестное сообщение от МК: "{message}"')

@@ -16,6 +16,7 @@ from .subscribers import (
     ImuHandshakeSuccessSubscriber,
     StartMeasuringSubscriber,
     StopMeasuringSubscriber,
+    InterruptMeasuringSubscriber,
     HandshakeDoneSubscriber,
     HeartbeatSentSubscriber,
     HeartbeatAckSubscriber,
@@ -24,6 +25,7 @@ from .subscribers import (
     CommandSentSubscriber,
     CommandAckSubscriber,
     CommandAckTimeoutSubscriber,
+    CommandRejectedSubscriber,
 )
 
 #########################
@@ -36,6 +38,7 @@ _logger            = app_logger.get_logger('App.Bus')
 _logged_signals: set[Signals] = {
     Signals.START_MEASURING,
     Signals.STOP_MEASURING,
+    Signals.INTERRUPT_MEASURING,
     Signals.HANDSHAKE_DONE,
     Signals.HANDSHAKE_FAILED,
     Signals.IMU_HANDSHAKE_SUCCESS,
@@ -45,6 +48,7 @@ _logged_signals: set[Signals] = {
     Signals.COMMAND_SENT,
     Signals.COMMAND_ACK,
     Signals.COMMAND_ACK_TIMEOUT,
+    Signals.COMMAND_REJECTED,
 }
 
 
@@ -158,6 +162,27 @@ class AppBus:
         @staticmethod
         async def emit() -> None:
             await _emit(Signals.STOP_MEASURING)
+
+    # ------------------------------------------
+
+    class InterruptMeasuringSignal:
+        """Эмиттится Controller при аварийной остановке (HANDSHAKE_FAILED,
+        DEVICE_LOST, COMMAND_ACK_TIMEOUT, COMMAND_REJECTED).
+
+        В отличие от STOP_MEASURING, означает «связь с МК нарушена —
+        не пытаться послать ему завершающие команды»."""
+
+        @staticmethod
+        def subscribe(subscriber: InterruptMeasuringSubscriber) -> None:
+            _bus.subscribe(Signals.INTERRUPT_MEASURING, subscriber.on_interrupt_measuring)
+
+        @staticmethod
+        def unsubscribe(subscriber: InterruptMeasuringSubscriber) -> None:
+            _bus.unsubscribe(Signals.INTERRUPT_MEASURING, subscriber.on_interrupt_measuring)
+
+        @staticmethod
+        async def emit() -> None:
+            await _emit(Signals.INTERRUPT_MEASURING)
 
     # =============================================================
     # ====================== Рукопожатие =========================
@@ -318,6 +343,27 @@ class AppBus:
         async def emit() -> None:
             await _emit(Signals.COMMAND_ACK_TIMEOUT)
 
+    # ------------------------------------------
+
+    class CommandRejectedSignal:
+        """Эмиттится ImuDecoder при получении от МК сообщения 'UNKNOWN_COMMAND'.
+
+        Семантически — третий исход команды от ПК (наряду с COMMAND_ACK и
+        COMMAND_ACK_TIMEOUT): МК ответил, но не понял команду — программная
+        ошибка контракта ПК↔МК."""
+
+        @staticmethod
+        def subscribe(subscriber: CommandRejectedSubscriber) -> None:
+            _bus.subscribe(Signals.COMMAND_REJECTED, subscriber.on_command_rejected)
+
+        @staticmethod
+        def unsubscribe(subscriber: CommandRejectedSubscriber) -> None:
+            _bus.unsubscribe(Signals.COMMAND_REJECTED, subscriber.on_command_rejected)
+
+        @staticmethod
+        async def emit() -> None:
+            await _emit(Signals.COMMAND_REJECTED)
+
     # =============================================================
 
     def __init__(self):
@@ -327,6 +373,7 @@ class AppBus:
         # Управление измерением
         self.start_measuring         = AppBus.StartMeasuringSignal()
         self.stop_measuring          = AppBus.StopMeasuringSignal()
+        self.interrupt_measuring     = AppBus.InterruptMeasuringSignal()
         # Рукопожатие
         self.handshake_done          = AppBus.HandshakeDoneSignal()
         self.handshake_failed        = AppBus.HandshakeFailedSignal()
@@ -339,3 +386,4 @@ class AppBus:
         self.command_sent            = AppBus.CommandSentSignal()
         self.command_ack             = AppBus.CommandAckSignal()
         self.command_ack_timeout     = AppBus.CommandAckTimeoutSignal()
+        self.command_rejected        = AppBus.CommandRejectedSignal()

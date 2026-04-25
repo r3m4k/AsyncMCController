@@ -54,6 +54,8 @@ class AsyncComPortImu(AsyncComPort):
         bus.handshake_done.subscribe(self)
         bus.heartbeat_ack.subscribe(self)
         bus.command_ack.subscribe(self)
+        bus.command_rejected.subscribe(self)
+        bus.interrupt_measuring.subscribe(self)
 
     # =============================================================
     # =================== Обработчики сигналов ====================
@@ -120,6 +122,41 @@ class AsyncComPortImu(AsyncComPort):
         """
         self._command_ack_event.set()
         self._logger.debug(f'Подтверждение команды получено по порту {self._port_name}')
+
+    async def on_command_rejected(self) -> None:
+        """Обработчик сигнала COMMAND_REJECTED от декодера.
+
+        МК ответил, но команду не распознал. Снимает ожидание в
+        _send_command_with_ack тем же _command_ack_event — самой эмиссии
+        исхода наружу здесь не делаем (её уже сделал декодер). Логику
+        аварийной остановки выполняет Controller, подписанный на тот же
+        сигнал.
+        """
+        self._command_ack_event.set()
+        self._logger.debug(
+            f'Ожидание ACK команды прервано по порту {self._port_name}: МК отверг команду'
+        )
+
+    async def on_interrupt_measuring(self) -> None:
+        """Обработчик сигнала INTERRUPT_MEASURING.
+
+        Аварийная остановка: связь с МК нарушена, протокольное
+        взаимодействие невозможно. В отличие от on_stop_measuring:
+          - не отправляем _set_foo_stage_command (МК либо не отвечает,
+            либо нарушил контракт);
+          - снимаем _command_ack_event, чтобы _send_command_with_ack,
+            если он сейчас в ожидании, мгновенно вышел без ложного
+            COMMAND_ACK_TIMEOUT (исход уже доставлен наружу аварийным
+            сигналом, который и привёл к interrupt).
+        Heartbeat останавливается через _cancel_task — CancelledError
+        чисто прервёт его внутренний wait_for, без ложного DEVICE_LOST.
+        Чтение прерывается через super().on_stop_measuring().
+        """
+        self._logger.warning(f'Аварийная остановка работы с портом {self._port_name}')
+        await self._cancel_task(self._heartbeat_task)
+        self._heartbeat_task = None
+        self._command_ack_event.set()
+        await super().on_stop_measuring()
 
     # =============================================================
     # =================== Внутренняя логика =======================
@@ -196,9 +233,15 @@ class AsyncComPortImu(AsyncComPort):
         """Отправка команды с ожиданием подтверждения от МК.
 
         Эмиттит COMMAND_SENT (декодер сохраняет состояние),
-        отправляет команду и ждёт подтверждения через asyncio.Event.
-        При таймауте эмиттит COMMAND_ACK_TIMEOUT — подписчики
-        (Controller, декодер) решают, как реагировать.
+        отправляет команду и ждёт пока _command_ack_event будет выставлен.
+        Событие может быть выставлено тремя путями:
+          1. on_command_ack          — штатный ACK (декодер уже эмиттнул COMMAND_ACK);
+          2. on_command_rejected     — МК отверг команду (декодер уже эмиттнул COMMAND_REJECTED);
+          3. on_interrupt_measuring  — аварийная остановка (контроллер уже эмиттнул INTERRUPT_MEASURING).
+
+        Во всех трёх случаях исход доставлен наружу другим путём — здесь
+        ничего не эмиттим. Эмиссия делается только если истёк таймаут:
+        COMMAND_ACK_TIMEOUT означает «МК не ответил вообще никак».
 
         Args:
             command (bytes): Команда для отправки на плату МК.

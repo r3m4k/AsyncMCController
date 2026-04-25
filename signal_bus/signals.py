@@ -25,13 +25,15 @@ class Signals(Enum):
     PACKAGE_READY = 'PackageReady'
 
     # Controller → ComPort
-    START_MEASURING = 'StartMeasuring'
-    STOP_MEASURING  = 'StopMeasuring'
+    START_MEASURING     = 'StartMeasuring'
+    STOP_MEASURING      = 'StopMeasuring'
+    INTERRUPT_MEASURING = 'InterruptMeasuring'
 
-    # Decoder → ImuComPort
-    HANDSHAKE_DONE = 'HandshakeDone'
-    HEARTBEAT_ACK  = 'HeartbeatAck'
-    COMMAND_ACK    = 'CommandAck'
+    # Decoder → ImuComPort, Controller
+    HANDSHAKE_DONE   = 'HandshakeDone'
+    HEARTBEAT_ACK    = 'HeartbeatAck'
+    COMMAND_ACK      = 'CommandAck'
+    COMMAND_REJECTED = 'CommandRejected'
 
     # ImuComPort → Decoder
     HEARTBEAT_SENT = 'HeartbeatSent'

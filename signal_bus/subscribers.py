@@ -106,6 +106,27 @@ class StopMeasuringSubscriber(Protocol):
 
 # ------------------------------------------
 
+class InterruptMeasuringSubscriber(Protocol):
+    """Протокол подписчика сигнала Signals.INTERRUPT_MEASURING.
+
+    Эмиттится Controller при аварийном завершении работы (HANDSHAKE_FAILED,
+    DEVICE_LOST, COMMAND_ACK_TIMEOUT, COMMAND_REJECTED). В отличие от
+    STOP_MEASURING, означает «связь с МК нарушена — никаких команд ему
+    больше не посылать»: получатель должен закрыть свои ресурсы напрямую,
+    минуя протокольное взаимодействие с устройством.
+
+    Пример реализации:
+        class AsyncComPortImu:
+            async def on_interrupt_measuring(self) -> None:
+                # отменяем heartbeat, прерываем ожидание ACK,
+                # останавливаем чтение — без команд МК
+                ...
+    """
+    async def on_interrupt_measuring(self) -> None: ...
+
+
+# ------------------------------------------
+
 class HandshakeDoneSubscriber(Protocol):
     """Протокол подписчика сигнала Signals.HANDSHAKE_DONE.
 
@@ -219,3 +240,23 @@ class CommandAckTimeoutSubscriber(Protocol):
                 self._force_stop = True
     """
     async def on_command_ack_timeout(self) -> None: ...
+
+
+# ------------------------------------------
+
+class CommandRejectedSubscriber(Protocol):
+    """Протокол подписчика сигнала Signals.COMMAND_REJECTED.
+
+    Эмиттится ImuDecoder при получении от МК сообщения 'UNKNOWN_COMMAND' —
+    МК не распознал отправленную ПК команду. Семантически это третий исход
+    команды (наряду с COMMAND_ACK и COMMAND_ACK_TIMEOUT) — «программная
+    ошибка контракта ПК↔МК». В проде такой ситуации быть не должно,
+    но для отладки сигнал критически важен.
+
+    Пример реализации:
+        class Controller:
+            async def on_command_rejected(self) -> None:
+                self._logger.critical('МК отверг команду — аварийная остановка')
+                self._force_stop = True
+    """
+    async def on_command_rejected(self) -> None: ...
