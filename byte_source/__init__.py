@@ -14,7 +14,7 @@
 """
 
 __version__ = '1.0.0'
-__author__ = 'Tamirlan Galeev'
+__author__ = 'Roman Romanovskiy'
 
 # --------------------------------------------------------
 

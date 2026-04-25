@@ -3,7 +3,7 @@
 """
 
 __version__ = '1.0.0'
-__author__ = 'Romanovskiy Roma'
+__author__ = 'Roman Romanovskiy'
 
 # --------------------------------------------------------
 

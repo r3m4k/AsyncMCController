@@ -28,17 +28,17 @@ class AppConfig(BaseModel):
     Неизвестные поля в JSON-файле запрещены.
 
     Attributes:
-        calibration (CalibrationConfig): Настройки калибровки.
-        com_port (ComPortConfig): Настройки COM-порта.
+        com_port (ComPortConfig):       Настройки COM-порта.
         file_source (FileSourceConfig): Настройки файлового источника.
-        save_dir (Path): Директория для сохранения результатов.
+        logger_config (LoggerConfig):   Настройки логгера.
+        save_dir (Path):                Директория для сохранения результатов.
     """
 
     model_config = ConfigDict(extra='forbid')
 
     com_port: ComPortConfig = Field(default_factory=ComPortConfig, description="Настройки COM-порта")
     file_source: FileSourceConfig = Field(default_factory=FileSourceConfig, description="Настройки файлового источника")
-    logger: LoggerConfig = Field(default_factory=LoggerConfig, description="Настройки логгера")
+    logger_config: LoggerConfig = Field(default_factory=LoggerConfig, description="Настройки логгера")
 
     save_dir: Path = Field(default_factory=lambda: Path("./results"), description="Директория для сохранения результатов")
 

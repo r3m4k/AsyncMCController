@@ -67,8 +67,8 @@ class ImuDecoder(BaseDecoder[ImuData]):
                     (через _command_queue, из _bytes_to_message).
 
     Attributes:
-        received_data (dict[int, list[ImuData]]): Словарь, где ключ —
-            идентификатор датчика, значение — список принятых пакетов.
+        received_data (list[ImuData]): Плоский список принятых пакетов
+            данных IMU в порядке поступления.
 
     Пример использования:
         decoder = ImuDecoder()
@@ -84,7 +84,7 @@ class ImuDecoder(BaseDecoder[ImuData]):
 
     def __init__(self):
         super().__init__()
-        self.received_data: dict[int, list[ImuData]] = {}   # Словарь с полученными данными
+        self.received_data: list[ImuData] = []   # Список полученных пакетов в порядке поступления
 
         # Сохранённое состояние автомата на время обработки heartbeat / команды
         self._saved_state: Optional[SavedState] = None
@@ -136,8 +136,8 @@ class ImuDecoder(BaseDecoder[ImuData]):
 
     @property
     def data_len(self) -> int:
-        """Возвращает максимальное количество пакетов среди всех датчиков."""
-        return max((len(v) for v in self.received_data.values()), default=0)
+        """Возвращает количество накопленных пакетов данных IMU."""
+        return len(self.received_data)
 
     def __str__(self) -> str:
         total = self._num_correct_packages + self._num_wrong_packages + self._num_unknown_packages
@@ -150,7 +150,11 @@ class ImuDecoder(BaseDecoder[ImuData]):
         )
 
     def save_received_data(self, filepath: str | Path, sep: str = ',') -> None:
-        """Сохраняет все накопленные данные декодера в файл.
+        """Сохраняет все накопленные данные декодера в CSV-файл.
+
+        Формат: PackageNum, AccX, AccY, AccZ, GyroX, GyroY, GyroZ.
+        Числа с плавающей точкой записываются с точкой как десятичным
+        разделителем — поэтому разделитель полей по умолчанию ','.
 
         Args:
             filepath (str | Path): Путь к файлу сохранения.
@@ -160,26 +164,23 @@ class ImuDecoder(BaseDecoder[ImuData]):
             ValueError: Если нет данных для сохранения.
         """
         if not self.received_data:
-            raise ValueError('Нет данных для сохранения. Словарь received_data пуст.')
+            raise ValueError('Нет данных для сохранения. Список received_data пуст.')
 
         file_path = Path(filepath)
         file_path.parent.mkdir(parents=True, exist_ok=True)
 
         with open(file_path, 'w', encoding='utf-8') as file:
-            file.write(f'SensorId{sep}Time{sep}ADCValue{sep}Gain\n')
-
-            for index in range(self.data_len):
-                for sensor_id in sorted(self.received_data.keys()):
-                    try:
-                        data = self.received_data[sensor_id][index]
-                        file.write(
-                            f'{sensor_id}{sep}'
-                            f'{data.time}{sep}'
-                            f'{data.adc_value}{sep}'
-                            f'{data.gain.to_string()}\n'
-                        )
-                    except IndexError:
-                        pass
+            file.write(
+                f'PackageNum{sep}'
+                f'AccX{sep}AccY{sep}AccZ{sep}'
+                f'GyroX{sep}GyroY{sep}GyroZ\n'
+            )
+            for data in self.received_data:
+                file.write(
+                    f'{data.package_num}{sep}'
+                    f'{data.acc.x_coord}{sep}{data.acc.y_coord}{sep}{data.acc.z_coord}{sep}'
+                    f'{data.gyro.x_coord}{sep}{data.gyro.y_coord}{sep}{data.gyro.z_coord}\n'
+                )
 
     # =============================================================
     # ================= Внутренняя логика =========================
@@ -259,9 +260,9 @@ class ImuDecoder(BaseDecoder[ImuData]):
             acc  = bytes_to_triaxial(byte_list[ImuDataIndexes.acc_index : ImuDataIndexes.acc_index + 12]),
             gyro = bytes_to_triaxial(byte_list[ImuDataIndexes.gyro_index : ImuDataIndexes.gyro_index + 12]),
         )
-        self.received_data.setdefault(data.id, []).append(data)
+        self.received_data.append(data)
         await self._package_queue.put(data)
-        _logger.debug(f'Пакет #{self._num_correct_packages} декодирован: sensor_id={data.id}')
+        _logger.debug(f'Пакет #{self._num_correct_packages} декодирован: package_num={data.package_num}')
 
     async def _bytes_to_command(self, byte_list: list[bytes]) -> None:
         """Заглушка для будущей обработки командных пакетов от МК.

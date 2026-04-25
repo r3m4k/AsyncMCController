@@ -3,12 +3,12 @@
 """
 
 __version__ = '1.0.0'
-__author__ = 'Tamirlan Galeev'
+__author__ = 'Roman Romanovskiy'
 
 # --------------------------------------------------------
 
 from .signals import Signals
-from .signal_bus import SignalBus, Subscriber, Publisher
+from .signal_bus import SignalBus, Subscriber
 from .subscribers import (
     NewByteSubscriber,
     PackageReadySubscriber,

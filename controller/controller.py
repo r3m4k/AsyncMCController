@@ -5,7 +5,7 @@ from typing import Callable
 # External imports
 
 # User imports
-from app_logger import app_logger
+from logger import app_logger
 from signal_bus import bus
 
 #########################

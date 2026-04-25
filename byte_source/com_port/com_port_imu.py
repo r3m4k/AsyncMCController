@@ -7,7 +7,7 @@ from typing import Callable, Optional
 # User imports
 from byte_source.com_port.com_port import AsyncComPort
 from byte_source.com_port.com_port_error import ComPortReadError
-from byte_source.com_port.imu_packet_builder import ImuPacketBuilder
+from byte_source.com_port.packet_imu_builder import PacketImuBuilder
 from signal_bus import bus
 
 #########################
@@ -223,7 +223,7 @@ class AsyncComPortImu(AsyncComPort):
     async def send_text_command(self, text: str) -> None:
         """Формирует текстовую команду в пакет протокола и отправляет на МК.
 
-        Упаковывает текст через ImuPacketBuilder и отправляет с ожиданием
+        Упаковывает текст через PacketImuBuilder и отправляет с ожиданием
         подтверждения CONFIRM_RECEIVED_COMMAND от МК.
 
         Args:
@@ -232,6 +232,6 @@ class AsyncComPortImu(AsyncComPort):
         Raises:
             ValueError: Если текст не кодируется в ASCII или превышает 255 байт.
         """
-        packet = ImuPacketBuilder.build_text_command(text)
+        packet = PacketImuBuilder.build_text_command(text)
         self._logger.debug(f'Отправка текстовой команды: "{text}"')
         await self._send_command_with_ack(packet)
