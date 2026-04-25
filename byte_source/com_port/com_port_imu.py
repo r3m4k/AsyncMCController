@@ -7,7 +7,7 @@ from typing import Callable, Optional
 # User imports
 from byte_source.com_port.com_port import AsyncComPort
 from byte_source.com_port.com_port_error import ComPortReadError
-from byte_source.com_port.packet_imu_builder import PacketImuBuilder
+from byte_source.com_port.packet_builders import PacketBuilderImuText, PacketBuilderImuBytes
 from signal_bus import bus
 
 #########################
@@ -30,6 +30,10 @@ class AsyncComPortImu(AsyncComPort):
 
     Логи пишутся через унаследованный `_logger` ('App.ComPort').
 
+    Команды на МК собираются через билдеры протокола IMU
+    (PacketBuilderImuText / PacketBuilderImuBytes) — заголовок и CRC
+    пакета вычисляются единообразно, без дублирования логики в этом классе.
+
     Attributes:
         _set_foo_stage_command (bytes):      Команда перевода в холостой режим.
         _set_measure_stage_command (bytes):  Команда перевода в режим измерения.
@@ -37,10 +41,10 @@ class AsyncComPortImu(AsyncComPort):
         _heartbeat_command (bytes):          Команда проверки на зависание.
     """
 
-    _set_foo_stage_command:     bytes = bytes([0xc8, 0x8c, 0xff, 0xaa, 0x01, 0x00])
-    _set_measure_stage_command: bytes = bytes([0xc8, 0x8c, 0xff, 0xaa, 0x02, 0x00])
-    _init_handshake_command:    bytes = bytes([0xc8, 0x8c, 0xff, 0xaa, 0xaa, 0x00])
-    _heartbeat_command:         bytes = bytes([0xc8, 0x8c, 0xff, 0xaa, 0xbb, 0x00])
+    _set_foo_stage_command:     bytes = PacketBuilderImuBytes.build_byte_command(bytes([0xAA, 0x01]))
+    _set_measure_stage_command: bytes = PacketBuilderImuBytes.build_byte_command(bytes([0xAA, 0x02]))
+    _init_handshake_command:    bytes = PacketBuilderImuText.build_text_command('HANDSHAKE_REQ')
+    _heartbeat_command:         bytes = PacketBuilderImuText.build_text_command('HEARTBEAT_REQ')
 
     def __init__(self, port_name: str, baudrate: int,
                  printing_func: Callable[..., None] = print):
@@ -266,7 +270,7 @@ class AsyncComPortImu(AsyncComPort):
     async def send_text_command(self, text: str) -> None:
         """Формирует текстовую команду в пакет протокола и отправляет на МК.
 
-        Упаковывает текст через PacketImuBuilder и отправляет с ожиданием
+        Упаковывает текст через PacketBuilderImuText и отправляет с ожиданием
         подтверждения CONFIRM_RECEIVED_COMMAND от МК.
 
         Args:
@@ -275,6 +279,6 @@ class AsyncComPortImu(AsyncComPort):
         Raises:
             ValueError: Если текст не кодируется в ASCII или превышает 255 байт.
         """
-        packet = PacketImuBuilder.build_text_command(text)
+        packet = PacketBuilderImuText.build_text_command(text)
         self._logger.debug(f'Отправка текстовой команды: "{text}"')
         await self._send_command_with_ack(packet)
