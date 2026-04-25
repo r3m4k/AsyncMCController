@@ -187,6 +187,18 @@ class ImuDecoder(BaseDecoder[ImuData]):
     # ================= Внутренняя логика =========================
     # =============================================================
 
+    def _reset(self) -> None:
+        """Сбрасывает состояние ImuDecoder к начальному.
+
+        Расширяет BaseDecoder._reset() очисткой received_data и _saved_state.
+        Используется list.clear() вместо переприсваивания, чтобы внешние
+        ссылки на received_data (если они есть) оставались валидными.
+        """
+        super()._reset()
+        self.received_data.clear()
+        self._saved_state = None
+        _logger.debug('Состояние ImuDecoder сброшено')
+
     def _get_decode_func(self, fmt: bytes) -> Optional[Callable[[list[bytes]], Coroutine[Any, Any, None]]]:
         """Возвращает функцию декодирования по байту формата пакета.
 

@@ -15,6 +15,8 @@ from signal_bus import bus
 
 #########################
 
+_SETUP_TIMEOUT: float = 5.0   # Таймаут открытия COM-порта (сек)
+
 
 class AsyncComPort(AsyncBytesSource):
     """Асинхронный класс для работы с COM-портом.
@@ -57,18 +59,33 @@ class AsyncComPort(AsyncBytesSource):
     async def setup(self) -> None:
         """Открытие COM-порта и создание потоков чтения/записи.
 
+        Открытие порта обёрнуто в asyncio.wait_for с таймаутом _SETUP_TIMEOUT —
+        защищает от зависания при проблемах с драйвером USB-Serial или
+        нестандартными конвертерами.
+
         Raises:
-            ComPortReadError: Если не удалось открыть порт.
+            ComPortReadError: Если не удалось открыть порт за _SETUP_TIMEOUT
+                секунд (зависание драйвера) или при ошибке последовательного
+                порта (неверное имя, занят другим процессом и т.п.).
         """
         self._printing_func(f'\nПодключение к порту {self._port_name}...')
         self._logger.info(f'Подключение к порту {self._port_name} ({self._baudrate} бод)')
         try:
-            self._port_reader, self._port_writer = await serial_asyncio.open_serial_connection(
-                url=self._port_name,
-                baudrate=self._baudrate
+            self._port_reader, self._port_writer = await asyncio.wait_for(
+                serial_asyncio.open_serial_connection(
+                    url=self._port_name,
+                    baudrate=self._baudrate
+                ),
+                timeout=_SETUP_TIMEOUT
             )
             self._printing_func('✅ Успешно')
             self._logger.info(f'Успешное подключение к порту {self._port_name}')
+        except asyncio.TimeoutError as err:
+            msg = (f'Таймаут открытия порта {self._port_name} '
+                   f'({_SETUP_TIMEOUT} сек) — порт не отвечает')
+            self._printing_func(f'❌ {msg}')
+            self._logger.error(msg)
+            raise ComPortReadError(msg, original_exception=err)
         except SerialException as err:
             self._printing_func('❌ Ошибка подключения. Подробная информация:')
             self._printing_func(err)
@@ -76,7 +93,15 @@ class AsyncComPort(AsyncBytesSource):
             raise ComPortReadError(f'Ошибка последовательного порта: {err}', original_exception=err)
 
     async def cleanup(self) -> None:
-        """Закрытие COM-порта и освобождение потоков."""
+        """Закрытие COM-порта и освобождение потоков.
+
+        Перед закрытием writer'а гарантирует остановку reading_loop —
+        на случай, если cleanup вызван минуя STOP_MEASURING / INTERRUPT_MEASURING
+        (например, при исключении до старта Controller.stop() или при внешней
+        отмене задачи main). Метод on_stop_measuring идемпотентен — повторный
+        вызов после штатной остановки безопасен.
+        """
+        await self.on_stop_measuring()
         try:
             if self._port_writer is not None:
                 self._port_writer.close()

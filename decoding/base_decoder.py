@@ -117,7 +117,13 @@ class BaseDecoder(ABC, Generic[T]):
         await self._byte_queue.put(bt)
 
     async def __aenter__(self) -> 'BaseDecoder':
-        """Запускает три фоновые задачи декодера."""
+        """Сбрасывает состояние и запускает три фоновые задачи декодера.
+
+        Сброс через шаблонный метод _reset() позволяет переиспользовать
+        декодер во втором измерении (повторный async with) с гарантией
+        начала работы из чистого состояния.
+        """
+        self._reset()
         _logger.debug('Запуск задач декодера')
         self._processing_task       = asyncio.create_task(self._processing_loop())
         self._package_emitting_task = asyncio.create_task(self._package_emitting_loop())
@@ -158,6 +164,40 @@ class BaseDecoder(ABC, Generic[T]):
     # =============================================================
     # ================= Внутренняя логика =========================
     # =============================================================
+
+    def _reset(self) -> None:
+        """Сбрасывает состояние декодера к начальному.
+
+        Шаблонный метод — вызывается из __aenter__ перед запуском фоновых
+        задач. Наследники переопределяют для сброса своих полей и должны
+        вызывать super()._reset() в начале реализации.
+
+        Сбрасывает:
+            - FSM (стадия, буфер посылки, индексы, _decode_func);
+            - счётчики корректных / битых / неизвестных пакетов;
+            - очереди (пересоздаются — старые задачи уже отменены в __aexit__).
+
+        Подписки на сигналы шины не трогаются — они зарегистрированы один
+        раз в __init__ и должны сохраняться между измерениями.
+        """
+        # FSM
+        self._stage = Stage.WantHeader
+        self._received_bytes = []
+        self._data_bt_index = 0
+        self._package_size = 0
+        self._decode_func = self._default_decode_func
+
+        # Счётчики
+        self._num_correct_packages = 0
+        self._num_wrong_packages = 0
+        self._num_unknown_packages = 0
+
+        # Очереди — пересоздаём, поскольку старые задачи уже отменены в __aexit__
+        self._byte_queue = asyncio.Queue()
+        self._package_queue = asyncio.Queue()
+        self._command_queue = asyncio.Queue()
+
+        _logger.debug('Состояние BaseDecoder сброшено')
 
     async def _processing_loop(self) -> None:
         """Фоновый цикл чтения байтов и обработки конечным автоматом."""
