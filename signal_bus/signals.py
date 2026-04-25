@@ -29,6 +29,9 @@ class Signals(Enum):
     STOP_MEASURING      = 'StopMeasuring'
     INTERRUPT_MEASURING = 'InterruptMeasuring'
 
+    # ComPort → Controller
+    READ_ERROR = 'ReadError'
+
     # Decoder → ImuComPort, Controller
     HANDSHAKE_DONE   = 'HandshakeDone'
     HEARTBEAT_ACK    = 'HeartbeatAck'

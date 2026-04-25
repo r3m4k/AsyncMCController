@@ -123,13 +123,21 @@ class AsyncComPort(AsyncBytesSource):
     async def reading_loop(self) -> None:
         """Основной цикл чтения байтов из COM-порта.
 
-        Читает байты в бесконечном цикле и эмиттит сигнал NEW_BYTE
-        в шину для каждого полученного байта.
-
-        Raises:
-            ComPortReadError: При ошибке чтения из порта.
+        Читает байты в бесконечном цикле и эмиттит сигнал NEW_BYTE в шину
+        для каждого полученного байта. При перехвате ComPortReadError
+        (физический обрыв соединения, ошибка последовательного порта)
+        эмиттит READ_ERROR с исключением в качестве аргумента и завершается
+        штатно — без проброса исключения наружу. Реакцию на ошибку
+        выполняет Controller, подписанный на READ_ERROR: он выставляет
+        _force_stop и из stop() эмиттит INTERRUPT_MEASURING.
         """
         self._logger.debug(f'Запуск цикла чтения из порта {self._port_name}')
-        while True:
-            bt = await self.read_byte()
-            await bus.new_byte.emit(bt)
+        try:
+            while True:
+                bt = await self.read_byte()
+                await bus.new_byte.emit(bt)
+        except ComPortReadError as err:
+            self._logger.error(
+                f'Прерывание цикла чтения из порта {self._port_name}: {err}'
+            )
+            await bus.read_error.emit(err)

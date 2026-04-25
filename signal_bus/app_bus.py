@@ -17,6 +17,7 @@ from .subscribers import (
     StartMeasuringSubscriber,
     StopMeasuringSubscriber,
     InterruptMeasuringSubscriber,
+    ReadErrorSubscriber,
     HandshakeDoneSubscriber,
     HeartbeatSentSubscriber,
     HeartbeatAckSubscriber,
@@ -28,10 +29,12 @@ from .subscribers import (
     CommandRejectedSubscriber,
 )
 
+from byte_source.read_error import ReadError
+
 #########################
 
-_bus:    SignalBus = SignalBus()
-_logger            = app_logger.get_logger('App.Bus')
+_bus: SignalBus = SignalBus()
+_logger = app_logger.get_logger('App.Bus')
 
 # Сигналы, эмиссия которых логируется на уровне DEBUG.
 # Высокочастотные сигналы (NEW_BYTE, PACKAGE_READY) намеренно исключены.
@@ -39,6 +42,7 @@ _logged_signals: set[Signals] = {
     Signals.START_MEASURING,
     Signals.STOP_MEASURING,
     Signals.INTERRUPT_MEASURING,
+    Signals.READ_ERROR,
     Signals.HANDSHAKE_DONE,
     Signals.HANDSHAKE_FAILED,
     Signals.IMU_HANDSHAKE_SUCCESS,
@@ -167,7 +171,7 @@ class AppBus:
 
     class InterruptMeasuringSignal:
         """Эмиттится Controller при аварийной остановке (HANDSHAKE_FAILED,
-        DEVICE_LOST, COMMAND_ACK_TIMEOUT, COMMAND_REJECTED).
+        DEVICE_LOST, COMMAND_ACK_TIMEOUT, COMMAND_REJECTED, READ_ERROR).
 
         В отличие от STOP_MEASURING, означает «связь с МК нарушена —
         не пытаться послать ему завершающие команды»."""
@@ -183,6 +187,27 @@ class AppBus:
         @staticmethod
         async def emit() -> None:
             await _emit(Signals.INTERRUPT_MEASURING)
+
+    # ------------------------------------------
+
+    class ReadErrorSignal:
+        """Эмиттится AsyncComPort.reading_loop при перехвате ComPortReadError.
+
+        Слушает только Controller — выставляет _force_stop. Сам ComPort на
+        этот сигнал не подписан: о необходимости остановки он узнаёт через
+        INTERRUPT_MEASURING, который Controller эмиттит из stop()."""
+
+        @staticmethod
+        def subscribe(subscriber: ReadErrorSubscriber) -> None:
+            _bus.subscribe(Signals.READ_ERROR, subscriber.on_read_error)
+
+        @staticmethod
+        def unsubscribe(subscriber: ReadErrorSubscriber) -> None:
+            _bus.unsubscribe(Signals.READ_ERROR, subscriber.on_read_error)
+
+        @staticmethod
+        async def emit(err: 'ReadError') -> None:
+            await _emit(Signals.READ_ERROR, err)
 
     # =============================================================
     # ====================== Рукопожатие =========================
@@ -374,6 +399,8 @@ class AppBus:
         self.start_measuring         = AppBus.StartMeasuringSignal()
         self.stop_measuring          = AppBus.StopMeasuringSignal()
         self.interrupt_measuring     = AppBus.InterruptMeasuringSignal()
+        # Ошибки чтения
+        self.read_error              = AppBus.ReadErrorSignal()
         # Рукопожатие
         self.handshake_done          = AppBus.HandshakeDoneSignal()
         self.handshake_failed        = AppBus.HandshakeFailedSignal()

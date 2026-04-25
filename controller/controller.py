@@ -7,6 +7,7 @@ from typing import Callable
 # User imports
 from logger import app_logger
 from signal_bus import bus
+from byte_source.read_error import ReadError
 
 #########################
 
@@ -23,16 +24,20 @@ class Controller:
       - штатное завершение: check_condition() вернул False
                             (например, собрано достаточно пакетов данных);
                             эмиттит STOP_MEASURING — порт штатно переводит МК
-                            в холостой режим.
+                            в холостой режим. Если во время самой штатной
+                            остановки выставится _force_stop (например, МК
+                            не подтвердил _set_foo_stage_command), Controller
+                            дополнительно эмиттит INTERRUPT_MEASURING, чтобы
+                            гарантировать аварийное закрытие ресурсов.
       - аварийное завершение: один из сигналов HANDSHAKE_FAILED / DEVICE_LOST
-                              / COMMAND_ACK_TIMEOUT / COMMAND_REJECTED
-                              выставил флаг _force_stop;
+                              / COMMAND_ACK_TIMEOUT / COMMAND_REJECTED /
+                              READ_ERROR выставил флаг _force_stop;
                               эмиттит INTERRUPT_MEASURING — порт закрывается
                               без попыток послать МК завершающие команды.
 
-    В обоих случаях соответствующий сигнал эмиттится ровно один раз — после
-    цикла проверки в методе stop(). Обработчики аварийных сигналов не эмиттят
-    STOP/INTERRUPT_MEASURING самостоятельно, чтобы исключить рекурсию через
+    В обоих случаях соответствующий сигнал эмиттится только из stop().
+    Обработчики аварийных сигналов не эмиттят STOP/INTERRUPT_MEASURING
+    самостоятельно, чтобы исключить рекурсию через
     on_stop_measuring -> _send_command_with_ack -> COMMAND_ACK_TIMEOUT ->
     on_command_ack_timeout -> on_stop_measuring.
 
@@ -43,6 +48,9 @@ class Controller:
                                      обработчиками аварийных сигналов и прерывает
                                      цикл ожидания в stop(); в этом случае вместо
                                      STOP_MEASURING эмиттится INTERRUPT_MEASURING.
+                                     Также проверяется повторно после STOP_MEASURING —
+                                     если флаг был выставлен во время штатной остановки,
+                                     дополнительно эмиттится INTERRUPT_MEASURING.
 
     Пример использования:
         N = 5000
@@ -59,6 +67,7 @@ class Controller:
         self._force_stop:      bool               = False
 
         # Самостоятельная подписка на события шины
+        bus.read_error.subscribe(self)
         bus.handshake_failed.subscribe(self)
         bus.device_lost.subscribe(self)
         bus.command_ack_timeout.subscribe(self)
@@ -76,22 +85,23 @@ class Controller:
     async def stop(self) -> None:
         """Ожидает условия остановки и эмиттит STOP_MEASURING или INTERRUPT_MEASURING.
 
-        Цикл прерывается при одном из двух условий:
-          - check_condition() вернул False — штатное завершение, эмиттится
-            STOP_MEASURING (порт штатно переводит МК в холостой режим);
-          - _force_stop выставлен аварийным обработчиком — эмиттится
-            INTERRUPT_MEASURING (порт закрывается без команд МК).
+        Логика остановки:
+          1. Цикл прерывается при одном из двух условий:
+             - check_condition() вернул False — штатное завершение;
+             - _force_stop выставлен аварийным обработчиком — аварийное завершение.
+          2. Если _force_stop выставлен — эмиттит INTERRUPT_MEASURING и завершается.
+          3. Если _force_stop не выставлен — эмиттит STOP_MEASURING.
+          4. После STOP_MEASURING повторно проверяет _force_stop: его мог выставить
+             обработчик, сработавший внутри STOP_MEASURING (например,
+             COMMAND_ACK_TIMEOUT при попытке перевести МК в холостой режим).
+             В этом случае дополнительно эмиттится INTERRUPT_MEASURING для
+             гарантированного аварийного закрытия ресурсов.
 
         Управление передаётся event loop между проверками через
         asyncio.sleep(0), чтобы не блокировать другие задачи.
 
-        TODO: пограничный случай — _force_stop может быть выставлен внутри
-            on_stop_measuring (из-за COMMAND_ACK_TIMEOUT при попытке перевести
-            МК в холостой). В этой ветке мы уже вышли из цикла и
-            INTERRUPT_MEASURING не эмиттим. Сейчас ничего не ломается —
-            ресурсы корректно закрываются через async with в main(),
-            но сигнал об аварии теряется. Если упрёмся в реальной отладке,
-            добавим повторную проверку _force_stop после STOP_MEASURING.
+        Идемпотентность INTERRUPT_MEASURING на стороне ComPort обеспечивается
+        в AsyncComPortImu.on_interrupt_measuring (повторные вызовы безопасны).
 
         Raises:
             asyncio.CancelledError: При внешней отмене задачи.
@@ -104,13 +114,39 @@ class Controller:
             if self._force_stop:
                 _logger.info('Аварийная остановка измерения')
                 await bus.interrupt_measuring.emit()
-            else:
-                _logger.info('Условие остановки выполнено — остановка измерения')
-                await bus.stop_measuring.emit()
+                return
+
+            _logger.info('Условие остановки выполнено — остановка измерения')
+            await bus.stop_measuring.emit()
+
+            # Повторная проверка: _force_stop мог быть выставлен обработчиком,
+            # сработавшим внутри STOP_MEASURING (например, COMMAND_ACK_TIMEOUT
+            # при попытке перевести МК в холостой режим). Без этой проверки
+            # семантический сигнал об аварии теряется.
+            if self._force_stop:
+                _logger.critical(
+                    'Ошибка при штатной остановке — переход в аварийный режим'
+                )
+                await bus.interrupt_measuring.emit()
 
         except asyncio.CancelledError:
             _logger.debug('Цикл проверки условия остановлен')
             raise
+
+    async def on_read_error(self, err: ReadError) -> None:
+        """Обработчик сигнала READ_ERROR — выставляет _force_stop.
+
+        Эмиттится AsyncComPort.reading_loop при перехвате ошибки чтения
+        (физический обрыв соединения, сбой последовательного порта и т.п.).
+        Цикл чтения уже завершился самостоятельно; дальнейшая остановка
+        ресурсов произойдёт через INTERRUPT_MEASURING из stop().
+
+        Args:
+            err (ReadError): Исключение, которое привело к остановке чтения.
+                             Сохраняется в логе для последующего анализа.
+        """
+        _logger.critical(f'Ошибка чтения из источника: {err} — аварийная остановка')
+        self._force_stop = True
 
     async def on_handshake_failed(self) -> None:
         """Обработчик сигнала HANDSHAKE_FAILED — выставляет _force_stop.
@@ -148,5 +184,5 @@ class Controller:
         ПК↔МК — продолжение работы небезопасно. INTERRUPT_MEASURING будет
         эмиттирован из stop() после выхода из цикла.
         """
-        _logger.critical('🛑 МК отверг команду — программная ошибка ПК↔МК, аварийная остановка')
+        _logger.critical('МК не распознал команду — программная ошибка ПК↔МК, аварийная остановка')
         self._force_stop = True

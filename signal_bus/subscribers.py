@@ -22,6 +22,7 @@ from typing import Protocol
 # External imports
 
 # User imports
+from byte_source.read_error import ReadError
 
 #########################
 
@@ -110,8 +111,8 @@ class InterruptMeasuringSubscriber(Protocol):
     """Протокол подписчика сигнала Signals.INTERRUPT_MEASURING.
 
     Эмиттится Controller при аварийном завершении работы (HANDSHAKE_FAILED,
-    DEVICE_LOST, COMMAND_ACK_TIMEOUT, COMMAND_REJECTED). В отличие от
-    STOP_MEASURING, означает «связь с МК нарушена — никаких команд ему
+    DEVICE_LOST, COMMAND_ACK_TIMEOUT, COMMAND_REJECTED, READ_ERROR). В отличие
+    от STOP_MEASURING, означает «связь с МК нарушена — никаких команд ему
     больше не посылать»: получатель должен закрыть свои ресурсы напрямую,
     минуя протокольное взаимодействие с устройством.
 
@@ -123,6 +124,29 @@ class InterruptMeasuringSubscriber(Protocol):
                 ...
     """
     async def on_interrupt_measuring(self) -> None: ...
+
+
+# ------------------------------------------
+
+class ReadErrorSubscriber(Protocol):
+    """Протокол подписчика сигнала Signals.READ_ERROR.
+
+    Эмиттится AsyncComPort.reading_loop при перехвате ComPortReadError
+    (физический обрыв соединения, ошибка последовательного порта и т.п.).
+    Слушает только Controller — выставляет _force_stop и инициирует
+    INTERRUPT_MEASURING из stop().
+
+    ComPort на этот сигнал не подписан: о необходимости остановки
+    он узнаёт через INTERRUPT_MEASURING, который Controller эмиттит
+    после выхода из цикла проверки условия.
+
+    Пример реализации:
+        class Controller:
+            async def on_read_error(self, err: 'ReadError') -> None:
+                self._logger.critical(f'Ошибка чтения: {err} — аварийная остановка')
+                self._force_stop = True
+    """
+    async def on_read_error(self, err: 'ReadError') -> None: ...
 
 
 # ------------------------------------------
