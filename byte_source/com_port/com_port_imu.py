@@ -53,6 +53,7 @@ class AsyncComPortImu(AsyncComPort):
         self._heartbeat_ack_event: asyncio.Event          = asyncio.Event()   # Событие получения ACK heartbeat
         self._command_ack_event:   asyncio.Event          = asyncio.Event()   # Событие получения подтверждения команды
         self._heartbeat_task:      Optional[asyncio.Task] = None              # Задача heartbeat loop
+        self._stopped:             bool                   = False             # Флаг «остановка уже выполнена»
 
         # Самостоятельная подписка на события шины
         bus.handshake_done.subscribe(self)
@@ -93,7 +94,20 @@ class AsyncComPortImu(AsyncComPort):
 
         Останавливает heartbeat, переводит плату в холостой режим
         и останавливает чтение.
+
+        Идемпотентен: повторный вызов после уже выполненной остановки
+        (через STOP_MEASURING или INTERRUPT_MEASURING) — no-op. Это нужно,
+        чтобы повторная эмиссия INTERRUPT_MEASURING после провалившейся
+        штатной остановки (Controller.stop) не пыталась посылать МК
+        команды второй раз.
         """
+        if self._stopped:
+            self._logger.debug(
+                f'STOP_MEASURING для порта {self._port_name} проигнорирован: '
+                f'остановка уже выполнена'
+            )
+            return
+        self._stopped = True
         await self._cancel_task(self._heartbeat_task)
         self._heartbeat_task = None
         await self._send_command_with_ack(self._set_foo_stage_command)
@@ -155,7 +169,20 @@ class AsyncComPortImu(AsyncComPort):
         Heartbeat останавливается через _cancel_task — CancelledError
         чисто прервёт его внутренний wait_for, без ложного DEVICE_LOST.
         Чтение прерывается через super().on_stop_measuring().
+
+        Идемпотентен: повторный вызов после уже выполненной остановки
+        (через STOP_MEASURING или INTERRUPT_MEASURING) — no-op. Это нужно
+        для случая «штатная остановка → сбой команды → повторный
+        INTERRUPT_MEASURING из Controller.stop()»: ресурсы уже освобождены
+        в on_stop_measuring, повторный проход тут не должен ничего ломать.
         """
+        if self._stopped:
+            self._logger.debug(
+                f'INTERRUPT_MEASURING для порта {self._port_name} проигнорирован: '
+                f'остановка уже выполнена'
+            )
+            return
+        self._stopped = True
         self._logger.warning(f'Аварийная остановка работы с портом {self._port_name}')
         await self._cancel_task(self._heartbeat_task)
         self._heartbeat_task = None
@@ -165,6 +192,16 @@ class AsyncComPortImu(AsyncComPort):
     # =============================================================
     # =================== Внутренняя логика =======================
     # =============================================================
+
+    async def setup(self) -> None:
+        """Открытие COM-порта и сброс флага остановки.
+
+        Сбрасывает _stopped перед каждым входом в контекстный менеджер,
+        чтобы объект можно было переиспользовать во втором `async with`
+        без ручного reset'а.
+        """
+        self._stopped = False
+        await super().setup()
 
     async def cleanup(self) -> None:
         """Завершение работы порта.

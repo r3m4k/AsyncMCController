@@ -28,7 +28,7 @@ class LoggerConfig(BaseModel):
         use_console (bool):    Включить вывод логов в консоль. По умолчанию True.
     """
 
-    log_dir: Path = Field(Path(__file__).parent / "logger" / ".logs",
+    log_dir: Path = Field(Path(__file__).parent / ".logs",
                           description='Директория для логов')
     log_filename: str  = Field('.logger.log', description='Имя файла лога')
     log_format: str  = Field(
