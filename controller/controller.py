@@ -1,6 +1,6 @@
 # System imports
 import asyncio
-from typing import Callable
+from typing import Any, Callable
 
 # External imports
 
@@ -41,6 +41,11 @@ class Controller:
     on_stop_measuring -> _send_command_with_ack -> COMMAND_ACK_TIMEOUT ->
     on_command_ack_timeout -> on_stop_measuring.
 
+    Помимо управления, контроллер подписан на PACKAGE_READY и выводит
+    в консоль номер каждого принятого пакета через `\\r`, перезаписывая
+    одну строку — чтобы 5000 пакетов не растягивали вывод. Финальный
+    перевод строки делает вызывающий код, не контроллер.
+
     Attributes:
         _check_condition (Callable): Функция-условие продолжения измерения.
                                      Возвращает True пока измерение должно продолжаться.
@@ -67,6 +72,7 @@ class Controller:
         self._force_stop:      bool               = False
 
         # Самостоятельная подписка на события шины
+        bus.package_ready.subscribe(self)
         bus.read_error.subscribe(self)
         bus.handshake_failed.subscribe(self)
         bus.device_lost.subscribe(self)
@@ -132,6 +138,21 @@ class Controller:
         except asyncio.CancelledError:
             _logger.debug('Цикл проверки условия остановлен')
             raise
+
+    async def on_package_ready(self, data: Any) -> None:
+        """Обработчик сигнала PACKAGE_READY — выводит номер пакета в консоль.
+
+        Печать через `\\r` без перевода строки — каждый следующий вывод
+        перезаписывает предыдущий, чтобы 5000 пакетов не превращались
+        в 5000 строк. Финальный `\\n` после остановки — забота вызывающего
+        кода.
+
+        Args:
+            data: Объект с атрибутом `package_num`. Тип не уточняется,
+                чтобы Controller оставался независимым от конкретного
+                декодера (утиная типизация).
+        """
+        print(f'\rПринят пакет #{data.package_num}', end='', flush=True)
 
     async def on_read_error(self, err: ReadError) -> None:
         """Обработчик сигнала READ_ERROR — выставляет _force_stop.

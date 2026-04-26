@@ -39,11 +39,11 @@ class Signals(Enum):
     COMMAND_REJECTED = 'CommandRejected'
 
     # ImuComPort → Decoder
+    HANDSHAKE_INIT = 'HandshakeInit'
     HEARTBEAT_SENT = 'HeartbeatSent'
     COMMAND_SENT   = 'CommandSent'
 
     # ImuComPort → Controller, Decoder
-    HANDSHAKE_FAILED      = 'HandshakeFailed'
-    DEVICE_LOST           = 'DeviceLost'
-    COMMAND_ACK_TIMEOUT   = 'CommandAckTimeout'
-    IMU_HANDSHAKE_SUCCESS = 'ImuHandshakeSuccess'
+    HANDSHAKE_FAILED    = 'HandshakeFailed'
+    DEVICE_LOST         = 'DeviceLost'
+    COMMAND_ACK_TIMEOUT = 'CommandAckTimeout'

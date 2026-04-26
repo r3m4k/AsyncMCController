@@ -13,11 +13,11 @@ from .signal_bus import SignalBus
 from .subscribers import (
     NewByteSubscriber,
     PackageReadySubscriber,
-    ImuHandshakeSuccessSubscriber,
     StartMeasuringSubscriber,
     StopMeasuringSubscriber,
     InterruptMeasuringSubscriber,
     ReadErrorSubscriber,
+    HandshakeInitSubscriber,
     HandshakeDoneSubscriber,
     HeartbeatSentSubscriber,
     HeartbeatAckSubscriber,
@@ -43,9 +43,9 @@ _logged_signals: set[Signals] = {
     Signals.STOP_MEASURING,
     Signals.INTERRUPT_MEASURING,
     Signals.READ_ERROR,
+    Signals.HANDSHAKE_INIT,
     Signals.HANDSHAKE_DONE,
     Signals.HANDSHAKE_FAILED,
-    Signals.IMU_HANDSHAKE_SUCCESS,
     Signals.HEARTBEAT_SENT,
     Signals.HEARTBEAT_ACK,
     Signals.DEVICE_LOST,
@@ -213,6 +213,27 @@ class AppBus:
     # ====================== Рукопожатие =========================
     # =============================================================
 
+    class HandshakeInitSignal:
+        """Эмиттится AsyncComPortImu в начале процедуры рукопожатия.
+
+        Семантика: «начинается работа с неизвестным МК — обнулить
+        накопленное состояние, чтобы первый байт нового сеанса
+        разбирался с чистого листа»."""
+
+        @staticmethod
+        def subscribe(subscriber: HandshakeInitSubscriber) -> None:
+            _bus.subscribe(Signals.HANDSHAKE_INIT, subscriber.on_handshake_init)
+
+        @staticmethod
+        def unsubscribe(subscriber: HandshakeInitSubscriber) -> None:
+            _bus.unsubscribe(Signals.HANDSHAKE_INIT, subscriber.on_handshake_init)
+
+        @staticmethod
+        async def emit() -> None:
+            await _emit(Signals.HANDSHAKE_INIT)
+
+    # ------------------------------------------
+
     class HandshakeDoneSignal:
         """Эмиттится Decoder при получении ACK рукопожатия."""
 
@@ -244,23 +265,6 @@ class AppBus:
         @staticmethod
         async def emit() -> None:
             await _emit(Signals.HANDSHAKE_FAILED)
-
-    # ------------------------------------------
-
-    class ImuHandshakeSuccessSignal:
-        """Эмиттится AsyncComPortImu после успешного рукопожатия."""
-
-        @staticmethod
-        def subscribe(subscriber: ImuHandshakeSuccessSubscriber) -> None:
-            _bus.subscribe(Signals.IMU_HANDSHAKE_SUCCESS, subscriber.on_imu_handshake_success)
-
-        @staticmethod
-        def unsubscribe(subscriber: ImuHandshakeSuccessSubscriber) -> None:
-            _bus.unsubscribe(Signals.IMU_HANDSHAKE_SUCCESS, subscriber.on_imu_handshake_success)
-
-        @staticmethod
-        async def emit() -> None:
-            await _emit(Signals.IMU_HANDSHAKE_SUCCESS)
 
     # =============================================================
     # ======================== Heartbeat ==========================
@@ -393,24 +397,24 @@ class AppBus:
 
     def __init__(self):
         # Передача данных
-        self.new_byte                = AppBus.NewByteSignal()
-        self.package_ready           = AppBus.PackageReadySignal()
+        self.new_byte            = AppBus.NewByteSignal()
+        self.package_ready       = AppBus.PackageReadySignal()
         # Управление измерением
-        self.start_measuring         = AppBus.StartMeasuringSignal()
-        self.stop_measuring          = AppBus.StopMeasuringSignal()
-        self.interrupt_measuring     = AppBus.InterruptMeasuringSignal()
+        self.start_measuring     = AppBus.StartMeasuringSignal()
+        self.stop_measuring      = AppBus.StopMeasuringSignal()
+        self.interrupt_measuring = AppBus.InterruptMeasuringSignal()
         # Ошибки чтения
-        self.read_error              = AppBus.ReadErrorSignal()
+        self.read_error          = AppBus.ReadErrorSignal()
         # Рукопожатие
-        self.handshake_done          = AppBus.HandshakeDoneSignal()
-        self.handshake_failed        = AppBus.HandshakeFailedSignal()
-        self.imu_handshake_success = AppBus.ImuHandshakeSuccessSignal()
+        self.handshake_init      = AppBus.HandshakeInitSignal()
+        self.handshake_done      = AppBus.HandshakeDoneSignal()
+        self.handshake_failed    = AppBus.HandshakeFailedSignal()
         # Heartbeat
-        self.heartbeat_sent          = AppBus.HeartbeatSentSignal()
-        self.heartbeat_ack           = AppBus.HeartbeatAckSignal()
-        self.device_lost             = AppBus.DeviceLostSignal()
+        self.heartbeat_sent      = AppBus.HeartbeatSentSignal()
+        self.heartbeat_ack       = AppBus.HeartbeatAckSignal()
+        self.device_lost         = AppBus.DeviceLostSignal()
         # Подтверждение команд
-        self.command_sent            = AppBus.CommandSentSignal()
-        self.command_ack             = AppBus.CommandAckSignal()
-        self.command_ack_timeout     = AppBus.CommandAckTimeoutSignal()
-        self.command_rejected        = AppBus.CommandRejectedSignal()
+        self.command_sent        = AppBus.CommandSentSignal()
+        self.command_ack         = AppBus.CommandAckSignal()
+        self.command_ack_timeout = AppBus.CommandAckTimeoutSignal()
+        self.command_rejected    = AppBus.CommandRejectedSignal()

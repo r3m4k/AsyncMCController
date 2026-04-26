@@ -60,7 +60,7 @@ class ImuDecoder(BaseDecoder[ImuData]):
     на время обработки короткого ACK-пакета.
 
     Дополнительное взаимодействие с шиной (поверх базового NEW_BYTE /
-    PACKAGE_READY):
+    HANDSHAKE_INIT / PACKAGE_READY):
         - подписка: HEARTBEAT_SENT, COMMAND_SENT (сохранить состояние);
         - подписка: COMMAND_ACK_TIMEOUT (откатить состояние при таймауте);
         - эмиссия:  HANDSHAKE_DONE, HEARTBEAT_ACK, COMMAND_ACK,
@@ -91,7 +91,7 @@ class ImuDecoder(BaseDecoder[ImuData]):
         self._saved_state: Optional[SavedState] = None
 
         # Самостоятельная подписка на IMU-специфичные сигналы шины
-        # (NEW_BYTE подписан в BaseDecoder)
+        # (NEW_BYTE и HANDSHAKE_INIT подписаны в BaseDecoder)
         bus.heartbeat_sent.subscribe(self)
         bus.command_sent.subscribe(self)
         bus.command_ack_timeout.subscribe(self)
@@ -187,17 +187,23 @@ class ImuDecoder(BaseDecoder[ImuData]):
     # ================= Внутренняя логика =========================
     # =============================================================
 
-    def _reset(self) -> None:
-        """Сбрасывает состояние ImuDecoder к начальному.
+    def _clear(self) -> None:
+        """Очищает состояние ImuDecoder.
 
-        Расширяет BaseDecoder._reset() очисткой received_data и _saved_state.
+        Расширяет BaseDecoder._clear() очисткой received_data и _saved_state.
         Используется list.clear() вместо переприсваивания, чтобы внешние
         ссылки на received_data (если они есть) оставались валидными.
+
+        Вызывается:
+          - из BaseDecoder._reset() при входе в контекстный менеджер
+            (через шаблонный метод — полиморфизм подтянет эту реализацию);
+          - из BaseDecoder.on_handshake_init() при получении сигнала
+            HANDSHAKE_INIT (начало работы с новым МК).
         """
-        super()._reset()
+        super()._clear()
         self.received_data.clear()
         self._saved_state = None
-        _logger.debug('Состояние ImuDecoder сброшено')
+        _logger.debug('Состояние ImuDecoder очищено')
 
     def _get_decode_func(self, fmt: bytes) -> Optional[Callable[[list[bytes]], Coroutine[Any, Any, None]]]:
         """Возвращает функцию декодирования по байту формата пакета.

@@ -59,22 +59,6 @@ class PackageReadySubscriber(Protocol):
 
 # ------------------------------------------
 
-class ImuHandshakeSuccessSubscriber(Protocol):
-    """Протокол подписчика сигнала Signals.IMU_HANDSHAKE_SUCCESS.
-
-    Любой объект, реализующий метод on_imu_handshake_success, может быть
-    передан в AppBus.imu_handshake_success.subscribe().
-
-    Пример реализации:
-        class Controller:
-            async def on_imu_handshake_success(self) -> None:
-                self._logger.info('Рукопожатие с Imu выполнено успешно')
-    """
-    async def on_imu_handshake_success(self) -> None: ...
-
-
-# ------------------------------------------
-
 class StartMeasuringSubscriber(Protocol):
     """Протокол подписчика сигнала Signals.START_MEASURING.
 
@@ -147,6 +131,25 @@ class ReadErrorSubscriber(Protocol):
                 self._force_stop = True
     """
     async def on_read_error(self, err: 'ReadError') -> None: ...
+
+
+# ------------------------------------------
+
+class HandshakeInitSubscriber(Protocol):
+    """Протокол подписчика сигнала Signals.HANDSHAKE_INIT.
+
+    Эмиттится AsyncComPortImu в начале процедуры рукопожатия — перед
+    отправкой команды HANDSHAKE_REQ на МК. Семантически означает «начинается
+    работа с неизвестным МК»: декодер обнуляет накопленное состояние FSM,
+    счётчики и (в наследнике) накопленные данные, чтобы первый же байт
+    нового сеанса разбирался с чистого листа.
+
+    Пример реализации:
+        class BaseDecoder:
+            async def on_handshake_init(self) -> None:
+                self._clear()
+    """
+    async def on_handshake_init(self) -> None: ...
 
 
 # ------------------------------------------

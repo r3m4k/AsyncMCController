@@ -21,7 +21,8 @@ class AsyncComPortImu(AsyncComPort):
 
     Расширяет AsyncComPort процедурой рукопожатия, heartbeat и управлением
     режимами работы платы:
-    - При START_MEASURING отправляет команду рукопожатия и ждёт ACK через Event.
+    - При START_MEASURING эмиттит HANDSHAKE_INIT (декодер чистит состояние),
+      отправляет команду рукопожатия и ждёт ACK через Event.
     - При HANDSHAKE_DONE устанавливает событие рукопожатия, переводит плату
       в режим измерения и запускает heartbeat loop.
     - Heartbeat loop периодически отправляет команду и ждёт ACK через Event.
@@ -69,10 +70,13 @@ class AsyncComPortImu(AsyncComPort):
     async def on_start_measuring(self) -> None:
         """Обработчик сигнала START_MEASURING.
 
-        Отправляет команду рукопожатия, запускает чтение данных и ждёт ACK.
-        При таймауте эмиттит HANDSHAKE_FAILED.
+        Эмиттит HANDSHAKE_INIT (декодер чистит накопленное состояние перед
+        работой с неизвестным МК), отправляет команду рукопожатия,
+        запускает чтение данных и ждёт ACK. При таймауте эмиттит
+        HANDSHAKE_FAILED.
         """
         self._logger.debug(f'Инициализация рукопожатия по порту {self._port_name}')
+        await bus.handshake_init.emit()
         await self._send_command(self._init_handshake_command)
         await super().on_start_measuring()
 
@@ -116,14 +120,13 @@ class AsyncComPortImu(AsyncComPort):
     async def on_handshake_done(self) -> None:
         """Обработчик сигнала HANDSHAKE_DONE от декодера.
 
-        Устанавливает событие рукопожатия, переводит плату в режим измерения,
-        эмиттит IMU_HANDSHAKE_SUCCESS и запускает heartbeat loop.
+        Устанавливает событие рукопожатия, переводит плату в режим измерения
+        и запускает heartbeat loop.
         """
         self._handshake_event.set()
 
         self._logger.info(f'Рукопожатие с Imu по порту {self._port_name} выполнено успешно')
         await self._send_command_with_ack(self._set_measure_stage_command)
-        await bus.imu_handshake_success.emit()
 
         self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
 
