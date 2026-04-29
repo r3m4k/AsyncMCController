@@ -78,7 +78,7 @@ class AsyncComPortImu(AsyncComPort):
         запускает чтение данных и ждёт ACK. При таймауте эмиттит
         HANDSHAKE_FAILED.
         """
-        self._logger.debug(f'Инициализация рукопожатия по порту {self._port_name}')
+        _logger.debug(f'Инициализация рукопожатия по порту {self._port_name}')
         await bus.handshake_init.emit()
         await self._send_command(self._init_handshake_command)
         await super().on_start_measuring()
@@ -90,7 +90,7 @@ class AsyncComPortImu(AsyncComPort):
                 timeout=_RESPONSE_TIMEOUT
             )
         except asyncio.TimeoutError:
-            self._logger.error(
+            _logger.error(
                 f'Таймаут рукопожатия по порту {self._port_name} '
                 f'({_RESPONSE_TIMEOUT} сек) — рукопожатие не выполнено'
             )
@@ -109,7 +109,7 @@ class AsyncComPortImu(AsyncComPort):
         команды второй раз.
         """
         if self._stopped:
-            self._logger.debug(
+            _logger.debug(
                 f'STOP_MEASURING для порта {self._port_name} проигнорирован: '
                 f'остановка уже выполнена'
             )
@@ -128,7 +128,7 @@ class AsyncComPortImu(AsyncComPort):
         """
         self._handshake_event.set()
 
-        self._logger.info(f'Рукопожатие с Imu по порту {self._port_name} выполнено успешно')
+        _logger.info(f'Рукопожатие с Imu по порту {self._port_name} выполнено успешно')
         await self._send_command_with_ack(self._set_measure_stage_command)
 
         self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
@@ -136,7 +136,7 @@ class AsyncComPortImu(AsyncComPort):
     async def on_heartbeat_ack(self) -> None:
         """Обработчик сигнала HEARTBEAT_ACK от декодера."""
         self._heartbeat_ack_event.set()
-        self._logger.debug(f'ACK heartbeat получен по порту {self._port_name}')
+        _logger.debug(f'ACK heartbeat получен по порту {self._port_name}')
 
     async def on_command_ack(self) -> None:
         """Обработчик сигнала COMMAND_ACK от декодера.
@@ -145,7 +145,7 @@ class AsyncComPortImu(AsyncComPort):
         в _send_command_with_ack.
         """
         self._command_ack_event.set()
-        self._logger.debug(f'Подтверждение команды получено по порту {self._port_name}')
+        _logger.debug(f'Подтверждение команды получено по порту {self._port_name}')
 
     async def on_command_rejected(self) -> None:
         """Обработчик сигнала COMMAND_REJECTED от декодера.
@@ -157,7 +157,7 @@ class AsyncComPortImu(AsyncComPort):
         сигнал.
         """
         self._command_ack_event.set()
-        self._logger.debug(
+        _logger.debug(
             f'Ожидание ACK команды прервано по порту {self._port_name}: МК отверг команду'
         )
 
@@ -183,13 +183,13 @@ class AsyncComPortImu(AsyncComPort):
         в on_stop_measuring, повторный проход тут не должен ничего ломать.
         """
         if self._stopped:
-            self._logger.debug(
+            _logger.debug(
                 f'INTERRUPT_MEASURING для порта {self._port_name} проигнорирован: '
                 f'остановка уже выполнена'
             )
             return
         self._stopped = True
-        self._logger.warning(f'Аварийная остановка работы с портом {self._port_name}')
+        _logger.warning(f'Аварийная остановка работы с портом {self._port_name}')
         await self._cancel_task(self._heartbeat_task)
         self._heartbeat_task = None
         self._command_ack_event.set()
@@ -226,12 +226,12 @@ class AsyncComPortImu(AsyncComPort):
         При таймауте эмиттит DEVICE_LOST.
         Завершается корректно при отмене (asyncio.CancelledError).
         """
-        self._logger.debug(f'Запуск heartbeat loop по порту {self._port_name}')
+        _logger.debug(f'Запуск heartbeat loop по порту {self._port_name}')
         try:
             while True:
                 await asyncio.sleep(_HEARTBEAT_PERIOD)
 
-                self._logger.debug(f'Отправка heartbeat по порту {self._port_name}')
+                _logger.debug(f'Отправка heartbeat по порту {self._port_name}')
                 self._heartbeat_ack_event.clear()
                 await bus.heartbeat_sent.emit()
                 await self._send_command(self._heartbeat_command)
@@ -241,7 +241,7 @@ class AsyncComPortImu(AsyncComPort):
                         timeout=_RESPONSE_TIMEOUT
                     )
                 except asyncio.TimeoutError:
-                    self._logger.error(
+                    _logger.error(
                         f'Таймаут heartbeat по порту {self._port_name} '
                         f'({_RESPONSE_TIMEOUT} сек) — устройство не отвечает'
                     )
@@ -249,7 +249,7 @@ class AsyncComPortImu(AsyncComPort):
                     return
 
         except asyncio.CancelledError:
-            self._logger.debug(f'Heartbeat loop остановлен по порту {self._port_name}')
+            _logger.debug(f'Heartbeat loop остановлен по порту {self._port_name}')
             raise
 
     @staticmethod
@@ -272,7 +272,7 @@ class AsyncComPortImu(AsyncComPort):
         Args:
             command (bytes): Команда для отправки на плату МК.
         """
-        self._logger.debug(f'Отправка команды {command}')
+        _logger.debug(f'Отправка команды {command}')
         self._port_writer.write(command)
         await self._port_writer.drain()
 
@@ -295,7 +295,7 @@ class AsyncComPortImu(AsyncComPort):
         """
         self._command_ack_event.clear()
         await bus.command_sent.emit()
-        self._logger.debug(f'Отправка команды с подтверждением {command}')
+        _logger.debug(f'Отправка команды с подтверждением {command}')
         self._port_writer.write(command)
         await self._port_writer.drain()
         try:
@@ -304,7 +304,7 @@ class AsyncComPortImu(AsyncComPort):
                 timeout=_RESPONSE_TIMEOUT
             )
         except asyncio.TimeoutError:
-            self._logger.error(
+            _logger.error(
                 f'Таймаут подтверждения команды по порту {self._port_name} '
                 f'({_RESPONSE_TIMEOUT} сек)'
             )
@@ -323,5 +323,5 @@ class AsyncComPortImu(AsyncComPort):
             ValueError: Если текст не кодируется в ASCII или превышает 255 байт.
         """
         packet = PacketBuilderImuText.build_text_command(text)
-        self._logger.debug(f'Отправка текстовой команды: "{text}"')
+        _logger.debug(f'Отправка текстовой команды: "{text}"')
         await self._send_command_with_ack(packet)

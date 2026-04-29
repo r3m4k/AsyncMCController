@@ -68,7 +68,7 @@ class AsyncComPort(AsyncBytesSource):
                 порта (неверное имя, занят другим процессом и т.п.).
         """
         self._printing_func(f'\nПодключение к порту {self._port_name}...')
-        self._logger.info(f'Подключение к порту {self._port_name} ({self._baudrate} бод)')
+        _logger.info(f'Подключение к порту {self._port_name} ({self._baudrate} бод)')
         try:
             self._port_reader, self._port_writer = await asyncio.wait_for(
                 serial_asyncio.open_serial_connection(
@@ -78,17 +78,17 @@ class AsyncComPort(AsyncBytesSource):
                 timeout=_SETUP_TIMEOUT
             )
             self._printing_func('✅ Успешно')
-            self._logger.info(f'Успешное подключение к порту {self._port_name}')
+            _logger.info(f'Успешное подключение к порту {self._port_name}')
         except asyncio.TimeoutError as err:
             msg = (f'Таймаут открытия порта {self._port_name} '
                    f'({_SETUP_TIMEOUT} сек) — порт не отвечает')
             self._printing_func(f'❌ {msg}')
-            self._logger.error(msg)
+            _logger.error(msg)
             raise ComPortReadError(msg, original_exception=err)
         except SerialException as err:
             self._printing_func('❌ Ошибка подключения. Подробная информация:')
             self._printing_func(err)
-            self._logger.error(f'Ошибка подключения к порту {self._port_name}: {err}')
+            _logger.error(f'Ошибка подключения к порту {self._port_name}: {err}')
             raise ComPortReadError(f'Ошибка последовательного порта: {err}', original_exception=err)
 
     async def cleanup(self) -> None:
@@ -105,9 +105,9 @@ class AsyncComPort(AsyncBytesSource):
             if self._port_writer is not None:
                 self._port_writer.close()
                 await self._port_writer.wait_closed()
-                self._logger.info(f'Порт {self._port_name} закрыт')
+                _logger.info(f'Порт {self._port_name} закрыт')
         except Exception as err:
-            self._logger.warning(f'Ошибка при закрытии порта {self._port_name}: {err}')
+            _logger.warning(f'Ошибка при закрытии порта {self._port_name}: {err}')
 
     async def read_byte(self) -> bytes:
         """Асинхронное чтение одного байта из COM-порта.
@@ -124,19 +124,19 @@ class AsyncComPort(AsyncBytesSource):
                 raise ComPortReadError('Соединение с COM-портом разорвано')
             return data
         except SerialException as err:
-            self._logger.error(f'Ошибка чтения из порта {self._port_name}: {err}')
+            _logger.error(f'Ошибка чтения из порта {self._port_name}: {err}')
             raise ComPortReadError(f'Ошибка последовательного порта: {err}', original_exception=err)
 
     async def on_start_measuring(self) -> None:
         """Обработчик сигнала START_MEASURING — запускает цикл чтения."""
         if self._reading_task is None or self._reading_task.done():
-            self._logger.debug(f'Запуск чтения из порта {self._port_name}')
+            _logger.debug(f'Запуск чтения из порта {self._port_name}')
             self._reading_task = asyncio.create_task(self.reading_loop())
 
     async def on_stop_measuring(self) -> None:
         """Обработчик сигнала STOP_MEASURING — останавливает цикл чтения."""
         if self._reading_task is not None and not self._reading_task.done():
-            self._logger.debug(f'Остановка чтения из порта {self._port_name}')
+            _logger.debug(f'Остановка чтения из порта {self._port_name}')
             self._reading_task.cancel()
             try:
                 await self._reading_task
@@ -155,13 +155,13 @@ class AsyncComPort(AsyncBytesSource):
         выполняет Controller, подписанный на READ_ERROR: он выставляет
         _force_stop и из stop() эмиттит INTERRUPT_MEASURING.
         """
-        self._logger.debug(f'Запуск цикла чтения из порта {self._port_name}')
+        _logger.debug(f'Запуск цикла чтения из порта {self._port_name}')
         try:
             while True:
                 bt = await self.read_byte()
                 await bus.new_byte.emit(bt)
         except ComPortReadError as err:
-            self._logger.error(
+            _logger.error(
                 f'Прерывание цикла чтения из порта {self._port_name}: {err}'
             )
             await bus.read_error.emit(err)
