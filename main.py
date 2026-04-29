@@ -1,9 +1,11 @@
 # System imports
 import asyncio
+from pprint import pprint
 
 # External imports
 
 # User imports
+from signal_bus import bus
 from byte_source.com_port import AsyncComPortSetting
 from decoding.imu_decoding import ImuDecoder
 from controller.controller import Controller
@@ -33,6 +35,8 @@ async def main() -> None:
     controller = Controller(               # подписывается на HANDSHAKE_FAILED, DEVICE_LOST
         check_condition = lambda: decoder.data_len < N
     )
+
+    pprint(bus.get_subscribers())
 
     # ------------------------------------------
     # Запуск

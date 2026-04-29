@@ -16,6 +16,7 @@ from signal_bus import bus
 #########################
 
 _SETUP_TIMEOUT: float = 5.0   # Таймаут открытия COM-порта (сек)
+_logger: logging.Logger = app_logger.get_logger('App.ComPort')
 
 
 class AsyncComPort(AsyncBytesSource):
@@ -40,8 +41,6 @@ class AsyncComPort(AsyncBytesSource):
         async with AsyncComPort('COM3', 115200) as port:
             await port.reading_loop()
     """
-
-    _logger: logging.Logger = app_logger.get_logger('App.ComPort')
 
     def __init__(self, port_name: str, baudrate: int,
                  printing_func: Callable[..., None] = print):

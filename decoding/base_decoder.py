@@ -25,7 +25,7 @@ from signal_bus import bus
 
 #############################################
 
-_logger = app_logger.get_logger('App.Decoder')
+_logger = app_logger.get_logger('App.BaseDecoder')
 
 T = TypeVar('T')   # Тип декодированного пакета данных
 
@@ -243,7 +243,7 @@ class BaseDecoder(ABC, Generic[T]):
             while True:
                 data = await self._package_queue.get()
                 await bus.package_ready.emit(data)
-                _logger.debug(f'Пакет эмиттирован в шину')
+                # _logger.debug(f'Пакет эмиттирован в шину')
         except asyncio.CancelledError:
             _logger.debug('Цикл эмиссии пакетов остановлен')
             raise

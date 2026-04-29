@@ -1,16 +1,19 @@
 # System imports
 import asyncio
 from typing import Callable, Optional
+import logging
 
 # External imports
 
 # User imports
 from byte_source.com_port.com_port import AsyncComPort
-from byte_source.com_port.com_port_error import ComPortReadError
 from byte_source.com_port.packet_builders import PacketBuilderImuText, PacketBuilderImuBytes
 from signal_bus import bus
+from logger import app_logger
 
 #########################
+
+_logger: logging.Logger = app_logger.get_logger('App.ComPort.ComPortImu')
 
 _RESPONSE_TIMEOUT: float = 2.0    # Таймаут ответа на рукопожатие и heartbeat (сек)
 _HEARTBEAT_PERIOD: float = 10.0   # Период отправки heartbeat (сек)

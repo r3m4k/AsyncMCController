@@ -25,7 +25,7 @@ from decoding.utils import bytes_to_uint32, bytes_to_triaxial
 
 #############################################
 
-_logger = app_logger.get_logger('App.Decoder')
+_logger = app_logger.get_logger('App.BaseDecoder.ImuDecoder')
 
 # Тип сохранённого состояния автомата (см. ImuDecoder._save_state).
 # Порядок полей: stage, received_bytes, data_bt_index, package_size, decode_func.
@@ -281,7 +281,7 @@ class ImuDecoder(BaseDecoder[ImuData]):
         )
         self.received_data.append(data)
         await self._package_queue.put(data)
-        _logger.debug(f'Пакет #{self._num_correct_packages} декодирован: package_num={data.package_num}')
+        # _logger.debug(f'Пакет #{self._num_correct_packages} декодирован: package_num={data.package_num}')
 
     async def _bytes_to_command(self, byte_list: list[bytes]) -> None:
         """Заглушка для будущей обработки командных пакетов от МК (формат 0xAB).
