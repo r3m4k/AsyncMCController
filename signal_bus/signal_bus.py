@@ -77,3 +77,36 @@ class SignalBus:
         """
         for handler in self._subscribers[signal]:
             await handler(*args, **kwargs)
+
+    def get_subscribers(self) -> dict[Signals, list[object]]:
+        """
+        Возвращает текущих подписчиков всех сигналов в виде объектов-владельцев.
+
+        Для каждого сигнала из Signals формирует список объектов, которым
+        принадлежат зарегистрированные bound-методы (определяется через
+        атрибут `__self__`). Если зарегистрирован чистый callable без
+        привязки к объекту (например, обычная функция или лямбда),
+        в список кладётся сам callable.
+
+        Сигналы, на которые никто не подписан, попадают в результат
+        с пустым списком — это удобно для отладки: видно, какие сигналы
+        известны шине и ни на один из них нет подписчиков.
+
+        Возвращается обычный `dict`, а не `defaultdict` — чтобы внешний
+        код не мог случайно изменить внутреннее состояние шины через
+        возвращённый объект.
+
+        Returns:
+            dict[Signals, list[object]]: Словарь {сигнал: [объекты-подписчики]}.
+        """
+        result: dict[Signals, list[object]] = {}
+        for signal in Signals:
+            handlers = self._subscribers.get(signal, [])
+            owners: list[object] = []
+            for handler in handlers:
+                # bound-метод хранит объект-владельца в __self__;
+                # для свободных функций / лямбд кладём сам callable.
+                owner = getattr(handler, '__self__', handler)
+                owners.append(owner)
+            result[signal] = owners
+        return result

@@ -394,27 +394,44 @@ class AppBus:
             await _emit(Signals.COMMAND_REJECTED)
 
     # =============================================================
+    # ===================== Интроспекция ==========================
+    # =============================================================
+
+    @staticmethod
+    def get_subscribers() -> dict[Signals, list[object]]:
+        """Возвращает текущих подписчиков всех сигналов в виде объектов-владельцев.
+
+        Тонкая делегирующая обёртка над `SignalBus.get_subscribers()`,
+        чтобы пользователи `AppBus` могли пользоваться им как единой точкой
+        входа и не обращались к приватному модульному `_bus` напрямую.
+
+        Returns:
+            dict[Signals, list[object]]: Словарь {сигнал: [объекты-подписчики]}.
+                Сигналы без подписчиков попадают в результат с пустым списком.
+        """
+        return _bus.get_subscribers()
+
+    # =============================================================
 
     def __init__(self):
         # Передача данных
-        self.new_byte            = AppBus.NewByteSignal()
-        self.package_ready       = AppBus.PackageReadySignal()
+        self.new_byte                = AppBus.NewByteSignal()
+        self.package_ready           = AppBus.PackageReadySignal()
         # Управление измерением
-        self.start_measuring     = AppBus.StartMeasuringSignal()
-        self.stop_measuring      = AppBus.StopMeasuringSignal()
-        self.interrupt_measuring = AppBus.InterruptMeasuringSignal()
+        self.start_measuring         = AppBus.StartMeasuringSignal()
+        self.stop_measuring          = AppBus.StopMeasuringSignal()
+        self.interrupt_measuring     = AppBus.InterruptMeasuringSignal()
         # Ошибки чтения
-        self.read_error          = AppBus.ReadErrorSignal()
+        self.read_error              = AppBus.ReadErrorSignal()
         # Рукопожатие
-        self.handshake_init      = AppBus.HandshakeInitSignal()
-        self.handshake_done      = AppBus.HandshakeDoneSignal()
-        self.handshake_failed    = AppBus.HandshakeFailedSignal()
+        self.handshake_done          = AppBus.HandshakeDoneSignal()
+        self.handshake_failed        = AppBus.HandshakeFailedSignal()
         # Heartbeat
-        self.heartbeat_sent      = AppBus.HeartbeatSentSignal()
-        self.heartbeat_ack       = AppBus.HeartbeatAckSignal()
-        self.device_lost         = AppBus.DeviceLostSignal()
+        self.heartbeat_sent          = AppBus.HeartbeatSentSignal()
+        self.heartbeat_ack           = AppBus.HeartbeatAckSignal()
+        self.device_lost             = AppBus.DeviceLostSignal()
         # Подтверждение команд
-        self.command_sent        = AppBus.CommandSentSignal()
-        self.command_ack         = AppBus.CommandAckSignal()
-        self.command_ack_timeout = AppBus.CommandAckTimeoutSignal()
-        self.command_rejected    = AppBus.CommandRejectedSignal()
+        self.command_sent            = AppBus.CommandSentSignal()
+        self.command_ack             = AppBus.CommandAckSignal()
+        self.command_ack_timeout     = AppBus.CommandAckTimeoutSignal()
+        self.command_rejected        = AppBus.CommandRejectedSignal()
