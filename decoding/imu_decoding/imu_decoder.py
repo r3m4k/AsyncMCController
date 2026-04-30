@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Модуль декодера протокола передачи данных АЦП IMU.
+"""Модуль декодера протокола получения данных IMU.
 
 Содержит константы форматов пакетов и конкретную реализацию декодера
 для протокола IMU, унаследованную от BaseDecoder.
 
 Классы:
-    PackageFormat: Константы форматов пакетов протокола IMU.
-    ImuDecoder:  Декодер протокола IMU.
+    PackageFormat:  Константы форматов пакетов протокола IMU.
+    ImuDecoder:     Декодер протокола IMU.
 """
 
 # System imports
@@ -27,8 +27,7 @@ from decoding.utils import bytes_to_uint32, bytes_to_triaxial
 
 _logger = app_logger.get_logger('App.BaseDecoder.ImuDecoder')
 
-# Тип сохранённого состояния автомата (см. ImuDecoder._save_state).
-# Порядок полей: stage, received_bytes, data_bt_index, package_size, decode_func.
+# Тип сохранённого состояния автомата (см. ImuDecoder._save_state)
 SavedState: TypeAlias = tuple[
     Stage,
     list[bytes],
@@ -39,16 +38,13 @@ SavedState: TypeAlias = tuple[
 
 # ------------------------------------------
 
-
 class PackageFormat:
     """Константы форматов пакетов протокола IMU."""
     ImuFormat:   bytes = b'\x01'   # Пакет с данными IMU
     CommandFormat: bytes = b'\xAB'   # Командный пакет
     MessageFormat: bytes = b'\xCD'   # Текстовое сообщение (ACK рукопожатия / heartbeat)
 
-
 # ------------------------------------------
-
 
 class ImuDecoder(BaseDecoder[ImuData]):
     """Декодер протокола передачи данных АЦП IMU.
@@ -59,12 +55,13 @@ class ImuDecoder(BaseDecoder[ImuData]):
     а также механизм сохранения и восстановления состояния автомата
     на время обработки короткого ACK-пакета.
 
-    Дополнительное взаимодействие с шиной (поверх базового NEW_BYTE /
-    HANDSHAKE_INIT / PACKAGE_READY):
+    Дополнительное взаимодействие с шиной (поверх базового NEW_BYTE / PACKAGE_READY):
+        - подписка: HANDSHAKE_INIT (начало работы с новым МК → _clear()
+                    очищает FSM и счётчики, очереди и задачи не трогает);
         - подписка: HEARTBEAT_SENT, COMMAND_SENT (сохранить состояние);
         - подписка: COMMAND_ACK_TIMEOUT (откатить состояние при таймауте);
         - эмиссия:  HANDSHAKE_DONE, HEARTBEAT_ACK, COMMAND_ACK,
-                    COMMAND_REJECTED (через _command_queue, из _bytes_to_message).
+                    COMMAND_REJECTED (напрямую из _bytes_to_message).
 
     Attributes:
         received_data (list[ImuData]): Плоский список принятых пакетов
@@ -77,11 +74,12 @@ class ImuDecoder(BaseDecoder[ImuData]):
             await controller.stop()
     """
 
-    _header:                list[bytes] = [b'\xc8', b'\x8c']          # Заголовок посылки (2 байта)
-    _handshake_ack:         str         = 'IMU_STM32_ACK'             # Ожидаемое сообщение рукопожатия
-    _heartbeat_ack:         str         = 'IMU_STM32_ALIVE'           # Ожидаемое сообщение heartbeat
-    _command_ack:           str         = 'CONFIRM_RECEIVED_COMMAND'  # Ожидаемое подтверждение команды
-    _command_rejected_msg:  str         = 'UNKNOWN_COMMAND'           # Отказ МК: команда не распознана
+    _header: list[bytes] = [b'\xc8', b'\x8c']       # Заголовок посылки (2 байта)
+
+    _handshake_ack: str = 'IMU_STM32_ACK'           # Ожидаемое сообщение рукопожатия
+    _heartbeat_ack: str = 'IMU_STM32_ALIVE'         # Ожидаемое сообщение heartbeat
+    _command_ack: str = 'CONFIRM_RECEIVED_COMMAND'  # Ожидаемое подтверждение команды
+    _command_rejected_msg: str = 'UNKNOWN_COMMAND'  # Отказ МК: команда не распознана
 
     def __init__(self):
         super().__init__()
@@ -91,7 +89,7 @@ class ImuDecoder(BaseDecoder[ImuData]):
         self._saved_state: Optional[SavedState] = None
 
         # Самостоятельная подписка на IMU-специфичные сигналы шины
-        # (NEW_BYTE и HANDSHAKE_INIT подписаны в BaseDecoder)
+        bus.handshake_init.subscribe(self)
         bus.heartbeat_sent.subscribe(self)
         bus.command_sent.subscribe(self)
         bus.command_ack_timeout.subscribe(self)
@@ -99,6 +97,15 @@ class ImuDecoder(BaseDecoder[ImuData]):
     # =============================================================
     # =================== Обработчики сигналов ====================
     # =============================================================
+
+    async def on_handshake_init(self) -> None:
+        """Обработчик сигнала HANDSHAKE_INIT — чистит состояние FSM.
+
+        Семантика сигнала: «начинается работа с неизвестным МК», поэтому
+        накопленное состояние декодера обнуляется, чтобы первый же байт
+        нового сеанса разбирался с чистого листа.
+        """
+        self._clear()
 
     async def on_heartbeat_sent(self) -> None:
         """Обработчик сигнала HEARTBEAT_SENT — сохраняет состояние автомата.
@@ -240,10 +247,10 @@ class ImuDecoder(BaseDecoder[ImuData]):
             self._package_size,
             self._decode_func,
         )
-        self._stage          = Stage.WantHeader
+        self._stage = Stage.WantHeader
         self._received_bytes = []
-        self._data_bt_index  = 0
-        self._package_size   = 0
+        self._data_bt_index = 0
+        self._package_size = 0
         _logger.debug(f'Состояние декодера сохранено для {reason}')
 
     def _restore_state(self) -> None:
@@ -298,8 +305,9 @@ class ImuDecoder(BaseDecoder[ImuData]):
                      _command_registry: dict[str, <signal_descriptor>]
                  где значение — дескриптор шины с методом `async emit(...)`.
               3. Здесь: распарсить ASCII-имя из byte_list, найти в реестре,
-                 эмиттить через _command_queue. Неизвестное имя — warning
-                 без эмиссии (по аналогии с веткой else в _bytes_to_message).
+                 эмиттить напрямую через `await <signal_descriptor>.emit(...)`.
+                 Неизвестное имя — warning без эмиссии (по аналогии с веткой
+                 else в _bytes_to_message).
               4. Конкретные сигналы команд добавить в наследниках Signals/AppBus
                  для каждого проекта — без раздувания базовых перечислений.
 
@@ -335,22 +343,22 @@ class ImuDecoder(BaseDecoder[ImuData]):
             return
 
         if message == self._handshake_ack:
-            await self._command_queue.put(bus.handshake_done.emit())
+            await bus.handshake_done.emit()
             _logger.info(f'ACK рукопожатия получен: "{message}"')
 
         elif message == self._heartbeat_ack:
             self._restore_state()
-            await self._command_queue.put(bus.heartbeat_ack.emit())
+            await bus.heartbeat_ack.emit()
             _logger.debug(f'ACK heartbeat получен: "{message}"')
 
         elif message == self._command_ack:
             self._restore_state()
-            await self._command_queue.put(bus.command_ack.emit())
+            await bus.command_ack.emit()
             _logger.debug(f'Подтверждение команды получено: "{message}"')
 
         elif message == self._command_rejected_msg:
             self._restore_state()
-            await self._command_queue.put(bus.command_rejected.emit())
+            await bus.command_rejected.emit()
             _logger.warning(f'МК отверг команду: "{message}"')
 
         else:

@@ -78,10 +78,11 @@ class AsyncComPortImu(AsyncComPort):
         запускает чтение данных и ждёт ACK. При таймауте эмиттит
         HANDSHAKE_FAILED.
         """
+        await super().on_start_measuring()
+
         _logger.debug(f'Инициализация рукопожатия по порту {self._port_name}')
         await bus.handshake_init.emit()
         await self._send_command(self._init_handshake_command)
-        await super().on_start_measuring()
 
         self._handshake_event.clear()
         try:
@@ -95,6 +96,9 @@ class AsyncComPortImu(AsyncComPort):
                 f'({_RESPONSE_TIMEOUT} сек) — рукопожатие не выполнено'
             )
             await bus.handshake_failed.emit()
+
+        await self._send_command_with_ack(self._set_measure_stage_command)
+        self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
 
     async def on_stop_measuring(self) -> None:
         """Обработчик сигнала STOP_MEASURING.
@@ -123,15 +127,10 @@ class AsyncComPortImu(AsyncComPort):
     async def on_handshake_done(self) -> None:
         """Обработчик сигнала HANDSHAKE_DONE от декодера.
 
-        Устанавливает событие рукопожатия, переводит плату в режим измерения
-        и запускает heartbeat loop.
+        Устанавливает событие рукопожатия.
         """
         self._handshake_event.set()
-
         _logger.info(f'Рукопожатие с Imu по порту {self._port_name} выполнено успешно')
-        await self._send_command_with_ack(self._set_measure_stage_command)
-
-        self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
 
     async def on_heartbeat_ack(self) -> None:
         """Обработчик сигнала HEARTBEAT_ACK от декодера."""
@@ -295,9 +294,11 @@ class AsyncComPortImu(AsyncComPort):
         """
         self._command_ack_event.clear()
         await bus.command_sent.emit()
+
         _logger.debug(f'Отправка команды с подтверждением {command}')
         self._port_writer.write(command)
         await self._port_writer.drain()
+
         try:
             await asyncio.wait_for(
                 self._command_ack_event.wait(),

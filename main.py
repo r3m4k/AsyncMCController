@@ -45,6 +45,8 @@ async def main() -> None:
         await controller.start()
         await controller.stop()
 
+    print(decoder)
+
 
 if __name__ == '__main__':
     asyncio.run(main())

@@ -14,7 +14,7 @@ from byte_source.com_port import AsyncComPortImu as AsyncComPort
 
 #########################
 
-_logger = app_logger.get_logger('App.ComPort')
+_logger = app_logger.get_logger('App.ComPort.ComPortSetting')
 
 # ------------------------------------------
 
@@ -78,7 +78,7 @@ class AsyncComPortSetting(AsyncBytesSourceFactory):
         # Сохраняем изменения
         config.save()
 
-        _logger.debug(f'Создан AsyncComPort типа {AsyncComPort.__name__}:\n'
+        _logger.debug(f'Создан AsyncComPort типа {AsyncComPort.__name__}: '
                       f'{self._port_name} ({self._baudrate} бод)')
         return AsyncComPort(self._port_name, self._baudrate)
 
