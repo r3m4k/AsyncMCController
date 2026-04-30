@@ -247,11 +247,20 @@ class ImuDecoder(BaseDecoder[ImuData]):
             self._package_size,
             self._decode_func,
         )
+
+        prev_stage   = self._stage
+        prev_buf_len = len(self._received_bytes)
+        queue_size   = self._byte_queue.qsize()
+
         self._stage = Stage.WantHeader
         self._received_bytes = []
         self._data_bt_index = 0
         self._package_size = 0
-        _logger.debug(f'Состояние декодера сохранено для {reason}')
+        _logger.debug(
+            f'Состояние декодера сохранено для {reason} '
+            f'(stage={prev_stage.name}, буфер={prev_buf_len} байт, '
+            f'очередь={queue_size} байт)'
+        )
 
     def _restore_state(self) -> None:
         """Восстанавливает состояние конечного автомата из _saved_state.

@@ -61,9 +61,9 @@ class AppLogger:
         if config.logger_config.use_console:
             self._setup_console_handler()
 
-        # Запускаем yappi в режиме DEBUG
-        self._yappi_enabled = config.logger_config.log_level == logging.DEBUG
-        if self._yappi_enabled:
+        # Запускаем yappi только в режиме DEBUG
+        self._yappi_running: bool = False
+        if config.logger_config.log_level == logging.DEBUG:
             self._start_yappi()
 
     # =============================================================
@@ -131,8 +131,12 @@ class AppLogger:
         выполнения корутин без учёта времени ожидания await.
         Результаты сохраняются автоматически при завершении программы.
         """
+        if self._yappi_running:
+            return
+
         yappi.set_clock_type('cpu')
         yappi.start(builtins=False)
+        self._yappi_running = True
         self._logger.debug('Профилировщик yappi запущен (clock_type=cpu)')
 
         # Регистрируем сохранение результатов при завершении программы
@@ -168,7 +172,8 @@ class AppLogger:
     # =================== Публичные методы ========================
     # =============================================================
 
-    def get_logger(self, name: str) -> logging.Logger:
+    @staticmethod
+    def get_logger(name: str) -> logging.Logger:
         """Возвращает дочерний логгер с указанным именем.
 
         Дочерний логгер наследует уровень и обработчики корневого логгера,
@@ -198,6 +203,50 @@ class AppLogger:
         """
         if config.logger_config.use_file:
             self._setup_file_handler(log_dir)
+
+    def set_log_level(self, level: int) -> None:
+        """Изменяет уровень логирования в рантайме.
+
+        Применяет новый уровень к корневому логгеру и ко всем его обработчикам.
+        Если новый уровень — DEBUG и профилировщик yappi ещё не запущен,
+        он будет запущен в этот момент.
+
+        Args:
+            level (int): Новый уровень логирования. Допустимые значения —
+                logging.DEBUG, logging.INFO, logging.WARNING,
+                logging.ERROR, logging.CRITICAL.
+
+        Raises:
+            ValueError: Если уровень не входит в список допустимых.
+
+        Пример использования:
+            import logging
+            app_logger.set_log_level(logging.DEBUG)  # включит yappi, если ещё не включён
+        """
+        allowed = (logging.DEBUG, logging.INFO, logging.WARNING,
+                   logging.ERROR, logging.CRITICAL)
+        if level not in allowed:
+            raise ValueError(
+                f'Недопустимый уровень логирования: {level}. '
+                f'Допустимые: {list(allowed)}'
+            )
+
+        old_level = self._logger.level
+        self._logger.setLevel(level)
+
+        if self._file_handler is not None:
+            self._file_handler.setLevel(level)
+        if self._console_handler is not None:
+            self._console_handler.setLevel(level)
+
+        self._logger.info(
+            f'Уровень логирования изменён: '
+            f'{logging.getLevelName(old_level)} → {logging.getLevelName(level)}'
+        )
+
+        # Первый переход в DEBUG за сессию — запускаем yappi
+        if level == logging.DEBUG:
+            self._start_yappi()
 
     # =============================================================
     # ================ Методы для записи сообщений ================

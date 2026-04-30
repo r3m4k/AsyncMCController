@@ -1,10 +1,12 @@
 # System imports
 import asyncio
-from pprint import pprint
+import logging
+from pprint import pformat
 
 # External imports
 
 # User imports
+from logger import app_logger
 from signal_bus import bus
 from byte_source.com_port import AsyncComPortSetting
 from decoding.imu_decoding import ImuDecoder
@@ -17,26 +19,24 @@ N = 5000
 
 
 async def main() -> None:
-    # ------------------------------------------
+
+    # app_logger.set_log_level(logging.DEBUG)
+
     # Инициализация источника данных
-    # ------------------------------------------
     setting = AsyncComPortSetting()
     setting.configure_source()              # сбор параметров: из кэша или через консоль
     com_port = setting.get_bytes_source()   # подписывается на START/STOP_MEASURING
 
-    # ------------------------------------------
     # Инициализация декодера
-    # ------------------------------------------
-    decoder = ImuDecoder()               # подписывается на NEW_BYTE, HEARTBEAT_SENT, COMMAND_SENT
+    decoder = ImuDecoder()
 
-    # ------------------------------------------
     # Инициализация контроллера
-    # ------------------------------------------
     controller = Controller(               # подписывается на HANDSHAKE_FAILED, DEVICE_LOST
         check_condition = lambda: decoder.data_len < N
     )
 
-    pprint(bus.get_subscribers())
+    app_logger.debug(f'Список подписчиков сигнальной шины:'
+                     f'{pformat(bus.get_subscribers())}')
 
     # ------------------------------------------
     # Запуск

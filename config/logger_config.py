@@ -36,7 +36,7 @@ class LoggerConfig(BaseModel):
         description='Строка форматирования логов'
     )
     date_format: str = Field('%Y-%m-%d %H:%M:%S', description='Формат даты')
-    log_level: int = Field(logging.DEBUG, description='Уровень логирования')
+    log_level: int = Field(logging.WARNING, description='Уровень логирования', exclude=True)
     use_file: bool = Field(True, description='Запись логов в файл')
     use_console: bool = Field(True, description='Вывод логов в консоль')
 
