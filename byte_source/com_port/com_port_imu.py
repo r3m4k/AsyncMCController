@@ -96,6 +96,7 @@ class AsyncComPortImu(AsyncComPort):
                 f'({_RESPONSE_TIMEOUT} сек) — рукопожатие не выполнено'
             )
             await bus.handshake_failed.emit()
+            return
 
         await self._send_command_with_ack(self._set_measure_stage_command)
         self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
