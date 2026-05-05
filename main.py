@@ -2,13 +2,14 @@
 import asyncio
 import logging
 from pprint import pformat
+import multiprocessing as mp
 
 # External imports
 
 # User imports
 from logger import app_logger
 from signal_bus import bus
-from byte_source.com_port import AsyncComPortSetting
+from byte_source.com_port import AsyncComPortSetting, AsyncComPortImu
 from decoding.imu_decoding import ImuDecoder
 from controller.controller import Controller
 
@@ -42,10 +43,12 @@ async def main() -> None:
     # Запуск
     # ------------------------------------------
     async with com_port, decoder:
-        await controller.start()
-        await controller.stop()
+        await controller.start_measuring()
+        await controller.stop_measuring()
 
     print(decoder)
+
+
 
 
 if __name__ == '__main__':

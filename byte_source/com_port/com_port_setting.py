@@ -82,6 +82,9 @@ class AsyncComPortSetting(AsyncBytesSourceFactory):
                       f'{self._port_name} ({self._baudrate} бод)')
         return AsyncComPort(self._port_name, self._baudrate)
 
+    def get_port_info(self):
+        return self._port_name, self._baudrate
+
     def _try_use_cached_port(self) -> None:
         """Попытка использовать сохранённые в конфиге настройки порта.
 

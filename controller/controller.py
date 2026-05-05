@@ -79,7 +79,7 @@ class Controller:
         bus.command_ack_timeout.subscribe(self)
         bus.command_rejected.subscribe(self)
 
-    async def start(self) -> None:
+    async def start_measuring(self) -> None:
         """Запускает измерение через сигнал START_MEASURING.
 
         Raises:
@@ -88,7 +88,7 @@ class Controller:
         _logger.info('Запуск измерения')
         await bus.start_measuring.emit()
 
-    async def stop(self) -> None:
+    async def stop_measuring(self) -> None:
         """Ожидает условия остановки и эмиттит STOP_MEASURING или INTERRUPT_MEASURING.
 
         Логика остановки:
